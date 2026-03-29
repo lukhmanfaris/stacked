@@ -1,0 +1,1294 @@
+{
+    "project": {
+      "name": "Stacked",
+      "tagline": "Your bookmarks, beautifully organized.",
+      "version": "0.1.0",
+      "repository": "https://github.com/your-org/stacked",
+      "url": "https://stacked.app",
+      "license": "MIT"
+    },
+  
+    "tech_stack": {
+      "framework": { "name": "Next.js", "version": "14+", "config": "App Router, TypeScript" },
+      "language": { "name": "TypeScript", "version": "5.x" },
+      "ui": { "name": "shadcn/ui", "version": "latest" },
+      "styling": { "name": "Tailwind CSS", "version": "3.x" },
+      "state": { "name": "TanStack Query", "version": "5.x" },
+      "database": { "name": "Supabase", "engine": "PostgreSQL 15" },
+      "auth": { "name": "Supabase Auth", "methods": ["magic_link", "oauth_google", "oauth_github"] },
+      "serverless": { "name": "Supabase Edge Functions", "runtime": "Deno" },
+      "command_palette": { "name": "cmdk", "version": "1.x" },
+      "animations": { "name": "Framer Motion", "version": "11.x" },
+      "charts": { "name": "Recharts", "version": "2.x" },
+      "drag_drop": { "name": "@dnd-kit/core", "version": "6.x" },
+      "deployment": { "name": "Vercel" },
+      "monitoring": ["Sentry", "Vercel Analytics"]
+    },
+  
+    "database": {
+      "tables": {
+        "profiles": {
+          "description": "User profiles extending Supabase auth.users with onboarding, tier, and session tracking",
+          "columns": {
+            "id": { "type": "UUID", "primary_key": true, "foreign_key": "auth.users.id" },
+            "email": { "type": "TEXT", "nullable": false, "description": "Denormalized from auth.users for convenience" },
+            "email_verified": { "type": "BOOLEAN", "default": false, "description": "Set true via Supabase Auth webhook on email confirm" },
+            "username": { "type": "TEXT", "unique": true, "nullable": false },
+            "display_name": { "type": "TEXT", "nullable": true },
+            "avatar_url": { "type": "TEXT", "nullable": true },
+            "bio": { "type": "TEXT", "nullable": true, "max_length": 300 },
+            "tier": { "type": "TEXT", "default": "free", "enum": ["free", "pro"], "description": "Always 'free' at launch; Pro unlocked via M15 later" },
+            "onboarding_step": { "type": "TEXT", "default": "username", "enum": ["username", "categories", "first_bookmark", "done"], "description": "Tracks onboarding progress; 'done' = completed" },
+            "preferences": { "type": "JSONB", "default": "{\"theme\":\"system\",\"default_view\":\"stack\",\"items_per_page\":20,\"show_favicons\":true,\"show_og_images\":true,\"compact_mode\":false,\"email_notifications\":true}" },
+            "last_login_at": { "type": "TIMESTAMPTZ", "nullable": true, "description": "Updated on each new session" },
+            "created_at": { "type": "TIMESTAMPTZ", "default": "now()" },
+            "updated_at": { "type": "TIMESTAMPTZ", "default": "now()" }
+          },
+          "indexes": [
+            "idx_profiles_username ON profiles(username)",
+            "idx_profiles_email ON profiles(email)",
+            "idx_profiles_tier ON profiles(tier)"
+          ],
+          "rls": {
+            "select": "auth.uid() = id",
+            "insert": "auth.uid() = id",
+            "update": "auth.uid() = id",
+            "delete": "auth.uid() = id"
+          },
+          "triggers": [
+            "on_auth_user_created → auto-create profile row with email from auth.users, onboarding_step='username', tier='free'",
+            "on_auth_user_signin → update last_login_at to now()",
+            "on_email_confirmed (Supabase Auth webhook) → set email_verified = true"
+          ]
+        },
+  
+        "categories": {
+          "description": "Bookmark categories with one-level nesting support",
+          "columns": {
+            "id": { "type": "UUID", "primary_key": true, "default": "gen_random_uuid()" },
+            "user_id": { "type": "UUID", "foreign_key": "profiles.id", "nullable": false },
+            "name": { "type": "TEXT", "nullable": false, "max_length": 50 },
+            "slug": { "type": "TEXT", "nullable": false },
+            "description": { "type": "TEXT", "nullable": true, "max_length": 200 },
+            "color": { "type": "TEXT", "nullable": false, "default": "#6B7280" },
+            "icon": { "type": "TEXT", "nullable": true, "default": "folder" },
+            "parent_id": { "type": "UUID", "foreign_key": "categories.id", "nullable": true },
+            "sort_order": { "type": "INTEGER", "default": 0 },
+            "bookmark_count": { "type": "INTEGER", "default": 0 },
+            "is_default": { "type": "BOOLEAN", "default": false },
+            "created_at": { "type": "TIMESTAMPTZ", "default": "now()" },
+            "updated_at": { "type": "TIMESTAMPTZ", "default": "now()" }
+          },
+          "indexes": [
+            "idx_categories_user_id ON categories(user_id)",
+            "idx_categories_parent_id ON categories(parent_id)"
+          ],
+          "rls": {
+            "select": "auth.uid() = user_id",
+            "insert": "auth.uid() = user_id",
+            "update": "auth.uid() = user_id",
+            "delete": "auth.uid() = user_id"
+          },
+          "constraints": [
+            "parent_id != id (cannot be own parent)",
+            "unique(user_id, slug)"
+          ]
+        },
+  
+        "bookmarks": {
+          "description": "Core bookmarks table with full-text search",
+          "columns": {
+            "id": { "type": "UUID", "primary_key": true, "default": "gen_random_uuid()" },
+            "user_id": { "type": "UUID", "foreign_key": "profiles.id", "nullable": false },
+            "category_id": { "type": "UUID", "foreign_key": "categories.id", "nullable": false },
+            "url": { "type": "TEXT", "nullable": false, "max_length": 2048 },
+            "title": { "type": "TEXT", "nullable": false, "max_length": 200 },
+            "description": { "type": "TEXT", "nullable": true, "max_length": 500 },
+            "favicon_url": { "type": "TEXT", "nullable": true },
+            "og_image_url": { "type": "TEXT", "nullable": true },
+            "tags": { "type": "TEXT[]", "default": "{}" },
+            "is_pinned": { "type": "BOOLEAN", "default": false },
+            "is_archived": { "type": "BOOLEAN", "default": false },
+            "sort_order": { "type": "INTEGER", "default": 0 },
+            "link_status": { "type": "TEXT", "default": "unchecked", "enum": ["alive", "dead", "redirected", "timeout", "unchecked"] },
+            "last_checked_at": { "type": "TIMESTAMPTZ", "nullable": true },
+            "domain": { "type": "TEXT", "nullable": false },
+            "search_vec": { "type": "TSVECTOR" },
+            "created_at": { "type": "TIMESTAMPTZ", "default": "now()" },
+            "updated_at": { "type": "TIMESTAMPTZ", "default": "now()" }
+          },
+          "indexes": [
+            "idx_bookmarks_user_id ON bookmarks(user_id)",
+            "idx_bookmarks_category_id ON bookmarks(category_id)",
+            "idx_bookmarks_search_vec ON bookmarks USING GIN(search_vec)",
+            "idx_bookmarks_tags ON bookmarks USING GIN(tags)",
+            "idx_bookmarks_domain ON bookmarks(domain)",
+            "idx_bookmarks_created_at ON bookmarks(created_at DESC)"
+          ],
+          "rls": {
+            "select": "auth.uid() = user_id",
+            "insert": "auth.uid() = user_id",
+            "update": "auth.uid() = user_id",
+            "delete": "auth.uid() = user_id"
+          },
+          "triggers": [
+            "on_insert_update → rebuild search_vec from title + description + tags + url",
+            "on_insert → extract domain from url",
+            "on_insert → increment categories.bookmark_count",
+            "on_delete → decrement categories.bookmark_count",
+            "on_update(category_id) → adjust bookmark_count on old and new category"
+          ]
+        },
+  
+        "shared_links": {
+          "description": "Public portable view configuration",
+          "columns": {
+            "id": { "type": "UUID", "primary_key": true, "default": "gen_random_uuid()" },
+            "user_id": { "type": "UUID", "foreign_key": "profiles.id", "nullable": false },
+            "category_id": { "type": "UUID", "foreign_key": "categories.id", "nullable": true },
+            "slug": { "type": "TEXT", "unique": true, "nullable": false },
+            "title": { "type": "TEXT", "nullable": true, "max_length": 100 },
+            "description": { "type": "TEXT", "nullable": true, "max_length": 300 },
+            "theme": { "type": "TEXT", "default": "minimal", "enum": ["minimal", "cards", "masonry", "terminal"] },
+            "layout": { "type": "TEXT", "default": "grid", "enum": ["grid", "list", "stack"] },
+            "show_tags": { "type": "BOOLEAN", "default": true },
+            "show_descriptions": { "type": "BOOLEAN", "default": true },
+            "show_dates": { "type": "BOOLEAN", "default": false },
+            "is_active": { "type": "BOOLEAN", "default": true },
+            "view_count": { "type": "INTEGER", "default": 0 },
+            "created_at": { "type": "TIMESTAMPTZ", "default": "now()" },
+            "updated_at": { "type": "TIMESTAMPTZ", "default": "now()" }
+          },
+          "rls": {
+            "select_own": "auth.uid() = user_id",
+            "select_public": "is_active = true (anon access for portable view)",
+            "insert": "auth.uid() = user_id",
+            "update": "auth.uid() = user_id",
+            "delete": "auth.uid() = user_id"
+          }
+        },
+  
+        "collection_rules": {
+          "description": "Smart Collections auto-categorization rules",
+          "columns": {
+            "id": { "type": "UUID", "primary_key": true, "default": "gen_random_uuid()" },
+            "user_id": { "type": "UUID", "foreign_key": "profiles.id", "nullable": false },
+            "name": { "type": "TEXT", "nullable": false },
+            "match_type": { "type": "TEXT", "nullable": false, "enum": ["domain", "url_contains", "title_contains", "tag_match"] },
+            "match_value": { "type": "TEXT", "nullable": false },
+            "target_category_id": { "type": "UUID", "foreign_key": "categories.id", "nullable": false },
+            "is_active": { "type": "BOOLEAN", "default": true },
+            "auto_created": { "type": "BOOLEAN", "default": false },
+            "matched_count": { "type": "INTEGER", "default": 0 },
+            "created_at": { "type": "TIMESTAMPTZ", "default": "now()" }
+          },
+          "rls": {
+            "select": "auth.uid() = user_id",
+            "insert": "auth.uid() = user_id",
+            "update": "auth.uid() = user_id",
+            "delete": "auth.uid() = user_id"
+          }
+        }
+      },
+  
+      "storage_buckets": {
+        "favicons": { "public": true, "max_file_size_kb": 500, "allowed_types": ["image/png", "image/jpeg", "image/svg+xml", "image/x-icon"] },
+        "og-images": { "public": true, "max_file_size_kb": 2048, "allowed_types": ["image/png", "image/jpeg", "image/webp"] },
+        "avatars": { "public": true, "max_file_size_kb": 1024, "allowed_types": ["image/png", "image/jpeg", "image/webp"] }
+      }
+    },
+  
+    "modules": {
+      "M1": {
+        "name": "Auth & Identity",
+        "owner": "Supabase Auth + Frontend",
+        "priority": "mvp",
+        "scope": "Registration, login, email verification, session management, onboarding wizard, profile setup, tier enforcement groundwork",
+        "dependencies": [],
+        "tables": ["profiles"],
+        "storage_buckets": ["avatars"],
+        "components": [
+          {
+            "name": "login-form",
+            "path": "src/app/(auth)/login/page.tsx",
+            "features": [
+              "Email input for magic link",
+              "Google OAuth button",
+              "GitHub OAuth button",
+              "Loading/submitting states per provider",
+              "Error handling (invalid email, rate limit, network)",
+              "'Check your email' confirmation screen after magic link sent",
+              "Link to signup page"
+            ]
+          },
+          {
+            "name": "signup-form",
+            "path": "src/app/(auth)/signup/page.tsx",
+            "features": [
+              "Email input",
+              "Google OAuth button",
+              "GitHub OAuth button",
+              "Terms of service + privacy policy checkbox",
+              "Redirects to verify-email after email signup",
+              "Redirects to onboarding after OAuth signup",
+              "Error handling (email already registered, rate limit)"
+            ]
+          },
+          {
+            "name": "verify-email",
+            "path": "src/app/(auth)/verify-email/page.tsx",
+            "features": [
+              "Pending verification screen with email address displayed",
+              "Resend verification email button with 60-second cooldown timer",
+              "Countdown display for cooldown",
+              "Auto-redirect to onboarding once verified (polls or listens via Supabase Realtime)",
+              "Illustration + friendly messaging",
+              "'Wrong email?' link to go back to signup",
+              "Skipped entirely for OAuth users (already verified by provider)"
+            ]
+          },
+          {
+            "name": "onboarding-wizard",
+            "path": "src/app/(auth)/onboarding/page.tsx",
+            "features": [
+              "Step 1 — Choose Username: input with live availability check (debounced), slug preview showing 'stacked.app/yourname', optional display name, optional avatar upload",
+              "Step 2 — Pick Starter Categories: grid of preset category cards (Dev, Design, News, Reading, Tools, Social, Shopping, Recipes, etc.), multi-select with visual feedback, minimum 1 required, creates selected categories in DB",
+              "Step 3 — Add First Bookmark: URL input with auto-metadata fetch, metadata preview (favicon + title + description), category dropdown (from Step 2 picks), skip option ('I'll add later')",
+              "Progress indicator (3 dots / step bar)",
+              "Skip option per step (except username which is required)",
+              "Back button on steps 2 and 3",
+              "'Get Started' CTA on final step → sets onboarding_step='done' → redirects to dashboard",
+              "Each step persists to DB independently (safe to close and resume)"
+            ]
+          },
+          {
+            "name": "auth-callback",
+            "path": "src/app/(auth)/callback/route.ts",
+            "features": [
+              "OAuth code exchange with Supabase",
+              "Session cookie setting",
+              "Check if profile exists → if new user, redirect to onboarding",
+              "Check onboarding_step → if not 'done', redirect to onboarding",
+              "If returning user with completed onboarding → redirect to dashboard",
+              "Update last_login_at on profile"
+            ]
+          },
+          {
+            "name": "auth-guard",
+            "path": "src/components/shared/auth-guard.tsx",
+            "features": [
+              "Layout wrapper component for protected routes",
+              "Checks Supabase session → redirects to /login if unauthenticated",
+              "Checks profile.onboarding_step → redirects to /onboarding if not 'done'",
+              "Renders loading skeleton during session check",
+              "Provides user context to child components via React Context"
+            ]
+          }
+        ],
+        "api_routes": [
+          { "method": "POST", "path": "/api/auth/verify-email", "description": "Resend email verification (rate limited: 1 per 60s)" },
+          { "method": "GET", "path": "/api/auth/me", "description": "Get current user profile including tier and onboarding status" },
+          { "method": "POST", "path": "/api/onboarding", "description": "Submit onboarding step data (username, categories, first bookmark)" },
+          { "method": "GET", "path": "/api/username/check", "description": "Check username availability (query param: ?username=xxx)" }
+        ],
+        "hooks": [
+          {
+            "name": "use-auth",
+            "path": "src/hooks/use-auth.ts",
+            "returns": ["user", "profile", "isLoading", "isAuthenticated", "signOut", "tier", "isOnboarded"]
+          },
+          {
+            "name": "use-onboarding",
+            "path": "src/hooks/use-onboarding.ts",
+            "returns": ["currentStep", "submitStep", "skipStep", "goBack", "isSubmitting"]
+          }
+        ],
+        "edge_cases": [
+          "Username uniqueness validation (race condition: check + create must be atomic)",
+          "OAuth account linking (same email, different provider → Supabase handles via email matching)",
+          "Session expiry handling mid-action (show re-login modal, not hard redirect)",
+          "Redirect to original page after login (store intended URL in sessionStorage)",
+          "User closes browser during onboarding → resume at last completed step on next login",
+          "Email verification link expired → show 'link expired' page with resend button",
+          "OAuth user skips email verification entirely (provider already verified)",
+          "Username taken between availability check and submission → graceful error with suggestions"
+        ],
+        "tier_enforcement": {
+          "description": "Tier limits enforced at API layer from day one, even though only 'free' tier exists at launch. This ensures Pro tier activation (M15) requires zero API changes.",
+          "implementation": [
+            "Every create/write API route calls checkTierLimit(userId, resource) before proceeding",
+            "checkTierLimit reads profiles.tier and compares against TIER_LIMITS constant",
+            "On limit hit: return 403 with { code: 'TIER_LIMIT_REACHED', limit: 500, current: 500, resource: 'bookmarks' }",
+            "Frontend shows upgrade prompt (at launch: 'limit reached' message; post-M15: upgrade CTA)"
+          ],
+          "enforced_limits": {
+            "bookmarks": "MAX_BOOKMARKS_FREE (500)",
+            "categories": "MAX_CATEGORIES_FREE (20)",
+            "shared_links": "MAX_SHARED_LINKS_FREE (1)"
+          }
+        }
+      },
+  
+      "M2": {
+        "name": "Category Engine",
+        "owner": "Dashboard",
+        "priority": "mvp",
+        "scope": "Full CRUD for categories, nesting, ordering, visual customization",
+        "dependencies": ["M1"],
+        "tables": ["categories"],
+        "storage_buckets": [],
+        "components": [
+          {
+            "name": "category-tree",
+            "path": "src/components/categories/category-tree.tsx",
+            "features": [
+              "Hierarchical list with indent levels",
+              "Expand/collapse children",
+              "Drag-to-reorder via @dnd-kit",
+              "Drop bookmark onto category to move",
+              "Active state highlighting",
+              "Bookmark count badges",
+              "Color accent indicator per item"
+            ]
+          },
+          {
+            "name": "category-card",
+            "path": "src/components/categories/category-card.tsx",
+            "features": [
+              "Large card with name, color, icon, count",
+              "Description preview",
+              "Click to navigate",
+              "Context menu (edit, delete)"
+            ]
+          },
+          {
+            "name": "category-form",
+            "path": "src/components/categories/category-form.tsx",
+            "features": [
+              "Name input with slug preview",
+              "Color picker (12 preset colors)",
+              "Icon selector (grid of Lucide icons)",
+              "Parent category dropdown",
+              "Description textarea",
+              "Create / Update mode"
+            ]
+          },
+          {
+            "name": "category-badge",
+            "path": "src/components/categories/category-badge.tsx",
+            "features": [
+              "Inline pill with category color background",
+              "Category name text",
+              "Optional close/remove button"
+            ]
+          }
+        ],
+        "api_routes": [
+          { "method": "GET", "path": "/api/categories", "description": "List user categories as tree" },
+          { "method": "POST", "path": "/api/categories", "description": "Create category" },
+          { "method": "PATCH", "path": "/api/categories/[id]", "description": "Update category" },
+          { "method": "DELETE", "path": "/api/categories/[id]", "description": "Delete category" },
+          { "method": "PATCH", "path": "/api/categories/reorder", "description": "Batch update sort_order" }
+        ],
+        "hooks": [
+          {
+            "name": "use-categories",
+            "path": "src/hooks/use-categories.ts",
+            "returns": ["categories (tree)", "flatCategories", "isLoading", "addCategory", "updateCategory", "deleteCategory", "reorderCategories"]
+          }
+        ],
+        "business_rules": [
+          "Every user gets a 'General' default category on signup",
+          "A category cannot be its own parent",
+          "Max nesting depth of 1 (parent → child only)",
+          "On delete: prompt user to move bookmarks or delete them",
+          "Default category cannot be deleted"
+        ]
+      },
+  
+      "M3": {
+        "name": "Bookmark Core",
+        "owner": "Dashboard",
+        "priority": "mvp",
+        "scope": "Full CRUD for bookmarks, metadata display, tagging, pinning, bulk actions",
+        "dependencies": ["M1", "M2", "M4"],
+        "tables": ["bookmarks"],
+        "storage_buckets": [],
+        "components": [
+          {
+            "name": "bookmark-card",
+            "path": "src/components/bookmarks/bookmark-card.tsx",
+            "features": [
+              "Favicon display with fallback",
+              "Title with link to URL",
+              "Domain label",
+              "Truncated description (2 lines)",
+              "Tags as colored pills",
+              "Pin indicator (top-right)",
+              "OG image thumbnail (optional, toggleable)",
+              "Hover actions: edit, delete, open in new tab, copy URL",
+              "Right-click context menu",
+              "Link status dot indicator",
+              "Selected state (checkbox) for bulk actions"
+            ]
+          },
+          {
+            "name": "bookmark-list-item",
+            "path": "src/components/bookmarks/bookmark-list-item.tsx",
+            "features": [
+              "Compact single-row layout",
+              "Favicon + title + domain inline",
+              "Tags as small pills",
+              "Pin icon",
+              "Status dot",
+              "Double-click to inline edit title",
+              "Selection checkbox"
+            ]
+          },
+          {
+            "name": "bookmark-stack",
+            "path": "src/components/bookmarks/bookmark-stack.tsx",
+            "features": [
+              "USP: Visual card pile grouped by category",
+              "Shows top card with category name and color",
+              "Count badge (e.g., '24 links')",
+              "Top 3 favicons as preview row",
+              "Hover to peek (slight offset reveal via Framer Motion)",
+              "Click to fan-out with spring physics animation",
+              "Collapsed / expanded toggle state",
+              "Category color as accent border/gradient",
+              "Empty state for categories with no bookmarks"
+            ]
+          },
+          {
+            "name": "bookmark-grid",
+            "path": "src/components/bookmarks/bookmark-grid.tsx",
+            "features": [
+              "CSS Grid with auto-fill, min 280px columns",
+              "Masonry option for varied card heights",
+              "Virtualized rendering (react-window) for 100+ items",
+              "Responsive breakpoints",
+              "Animated entry with stagger (Framer Motion)"
+            ]
+          },
+          {
+            "name": "bookmark-form",
+            "path": "src/components/bookmarks/bookmark-form.tsx",
+            "features": [
+              "URL input field with paste detection",
+              "Auto-fetch trigger on valid URL (calls M4)",
+              "Loading spinner during metadata fetch",
+              "Metadata preview: favicon + title + description",
+              "Manual override for all auto-filled fields",
+              "Category dropdown (from M2 categories)",
+              "Tag input with autocomplete (existing tags)",
+              "Pin toggle switch",
+              "Create / Update mode",
+              "Keyboard submit (Cmd+Enter)"
+            ]
+          },
+          {
+            "name": "bookmark-actions",
+            "path": "src/components/bookmarks/bookmark-actions.tsx",
+            "features": [
+              "Floating toolbar (appears when 1+ items selected)",
+              "Actions: Move to category, Delete, Archive, Add tags, Pin/Unpin",
+              "Selected count display",
+              "Select all / Deselect all",
+              "Confirmation dialog for destructive actions",
+              "Optimistic UI updates"
+            ]
+          },
+          {
+            "name": "bookmark-skeleton",
+            "path": "src/components/bookmarks/bookmark-skeleton.tsx",
+            "features": [
+              "Shimmer animation",
+              "Card variant, list-item variant, stack variant",
+              "Matches real component dimensions"
+            ]
+          }
+        ],
+        "api_routes": [
+          { "method": "GET", "path": "/api/bookmarks", "description": "List bookmarks (paginated, filtered, sorted)" },
+          { "method": "POST", "path": "/api/bookmarks", "description": "Create bookmark" },
+          { "method": "GET", "path": "/api/bookmarks/[id]", "description": "Get single bookmark" },
+          { "method": "PATCH", "path": "/api/bookmarks/[id]", "description": "Update bookmark" },
+          { "method": "DELETE", "path": "/api/bookmarks/[id]", "description": "Delete bookmark" },
+          { "method": "POST", "path": "/api/bookmarks/bulk", "description": "Bulk action (move, delete, archive, tag, pin)" }
+        ],
+        "hooks": [
+          {
+            "name": "use-bookmarks",
+            "path": "src/hooks/use-bookmarks.ts",
+            "returns": ["bookmarks", "isLoading", "isError", "addBookmark", "updateBookmark", "deleteBookmark", "bulkAction", "page", "setPage", "hasNextPage", "filters", "setFilters", "resetFilters"]
+          }
+        ],
+        "business_rules": [
+          "URL is required; title auto-filled from metadata",
+          "Duplicate URL detection: warn user, don't block",
+          "Pinned bookmarks always sort first within their category",
+          "Tags stored as PostgreSQL TEXT[] array",
+          "updated_at auto-set via trigger on row update",
+          "Domain extracted from URL on insert (trigger)",
+          "Archived bookmarks hidden from default view"
+        ]
+      },
+  
+      "M4": {
+        "name": "Metadata Fetcher",
+        "owner": "Supabase Edge Functions",
+        "priority": "mvp",
+        "scope": "Server-side URL scraping for title, description, favicon, and OG image",
+        "dependencies": ["M9"],
+        "tables": [],
+        "storage_buckets": ["favicons", "og-images"],
+        "components": [],
+        "api_routes": [
+          { "method": "POST", "path": "/api/metadata", "description": "Fetch and return URL metadata" }
+        ],
+        "hooks": [],
+        "edge_function": {
+          "name": "fetch-metadata",
+          "path": "supabase/functions/fetch-metadata/index.ts",
+          "input": { "url": "string" },
+          "output": {
+            "title": "string | null",
+            "description": "string | null",
+            "favicon_url": "string | null (Supabase Storage URL after caching)",
+            "og_image_url": "string | null (Supabase Storage URL after caching)",
+            "domain": "string"
+          },
+          "behavior": [
+            "Fetch target URL HTML with 8s timeout",
+            "Parse <title>, <meta name='description'>, <meta property='og:image'>, <link rel='icon'>",
+            "Download favicon and OG image to Supabase Storage",
+            "Generate fallback favicon (domain initial + color) if none found",
+            "Handle redirects (follow up to 3)",
+            "Handle non-HTML responses gracefully (return domain only)",
+            "Rate limit: 30 requests per user per minute"
+          ]
+        },
+        "business_rules": [
+          "Timeout after 8 seconds",
+          "Follow up to 3 redirects",
+          "If fetch fails, return empty metadata (user fills manually)",
+          "Fallback favicon: colored circle with domain first letter",
+          "Skip fetch for known non-HTML domains (e.g., direct file links)"
+        ]
+      },
+  
+      "M5": {
+        "name": "Search & Discovery",
+        "owner": "Dashboard",
+        "priority": "mvp",
+        "scope": "Full-text search, filtering, sorting, and discovery of bookmarks",
+        "dependencies": ["M3"],
+        "tables": ["bookmarks"],
+        "storage_buckets": [],
+        "components": [
+          {
+            "name": "search-bar",
+            "path": "src/components/search/search-bar.tsx",
+            "features": [
+              "Text input with search icon",
+              "Debounced input (300ms)",
+              "Clear button (X)",
+              "Keyboard shortcut hint ('/' to focus)",
+              "Recent searches dropdown (last 5)",
+              "Live result count as you type"
+            ]
+          },
+          {
+            "name": "search-filters",
+            "path": "src/components/search/search-filters.tsx",
+            "features": [
+              "Collapsible filter panel",
+              "Category multi-select dropdown",
+              "Tag multi-select with autocomplete",
+              "Date range picker (from / to)",
+              "Link status filter (alive, dead, etc.)",
+              "Pinned-only toggle",
+              "Archived toggle",
+              "Applied filters count badge",
+              "Clear all filters button"
+            ]
+          },
+          {
+            "name": "search-results",
+            "path": "src/components/search/search-results.tsx",
+            "features": [
+              "Results list using bookmark-card or bookmark-list-item",
+              "Highlighted match terms in title/description",
+              "Result count display",
+              "Applied filters summary chips",
+              "Empty state for no matches",
+              "Pagination"
+            ]
+          }
+        ],
+        "api_routes": [
+          { "method": "GET", "path": "/api/search", "description": "Full-text search with filters and pagination" }
+        ],
+        "hooks": [
+          {
+            "name": "use-search",
+            "path": "src/hooks/use-search.ts",
+            "returns": ["query", "setQuery", "results", "isSearching", "suggestions", "clearSearch"]
+          }
+        ],
+        "implementation_notes": [
+          "PostgreSQL trigger rebuilds search_vec on insert/update",
+          "Uses to_tsvector('english', title || ' ' || coalesce(description,'') || ' ' || array_to_string(tags,' ') || ' ' || url)",
+          "Query uses plainto_tsquery with ts_rank for relevance",
+          "GIN index on search_vec for performance"
+        ]
+      },
+  
+      "M6": {
+        "name": "Import / Export",
+        "owner": "Dashboard (Settings)",
+        "priority": "phase2",
+        "scope": "Import bookmarks from browsers, export in standard formats",
+        "dependencies": ["M2", "M3"],
+        "tables": ["bookmarks", "categories"],
+        "storage_buckets": [],
+        "components": [
+          {
+            "name": "import-wizard",
+            "path": "src/components/import-export/import-wizard.tsx",
+            "features": [
+              "Step 1: Format selection (HTML / JSON / CSV)",
+              "Step 2: File upload with drag-and-drop zone",
+              "Step 3: Preview parsed data + duplicate strategy",
+              "Step 4: Progress bar during import",
+              "Step indicators and back/next navigation"
+            ]
+          },
+          {
+            "name": "import-preview",
+            "path": "src/components/import-export/import-preview.tsx",
+            "features": [
+              "Table of parsed bookmarks: URL, title, detected folder",
+              "Folder → Category mapping (editable)",
+              "Duplicate flag per item",
+              "Duplicate strategy selector (skip / overwrite / create new)",
+              "Item count summary",
+              "Toggle items on/off for selective import"
+            ]
+          },
+          {
+            "name": "export-options",
+            "path": "src/components/import-export/export-options.tsx",
+            "features": [
+              "Format selector: JSON, HTML (Netscape), CSV",
+              "Category filter: export all or selected categories",
+              "Include metadata toggle (favicons, descriptions)",
+              "Download button with filename preview"
+            ]
+          }
+        ],
+        "api_routes": [
+          { "method": "POST", "path": "/api/import/preview", "description": "Parse file and return preview (dry run)" },
+          { "method": "POST", "path": "/api/import", "description": "Execute import" },
+          { "method": "GET", "path": "/api/export", "description": "Export bookmarks in chosen format" }
+        ],
+        "hooks": [],
+        "business_rules": [
+          "HTML import parses Netscape Bookmark Format (universal browser export)",
+          "Folders in HTML map to categories (auto-create if not existing)",
+          "Large imports (1000+) processed in batches of 100",
+          "Max import file size: 10MB",
+          "JSON export is re-importable into Stacked",
+          "CSV export includes: url, title, description, category, tags, created_at"
+        ]
+      },
+  
+      "M7": {
+        "name": "Portable Public View",
+        "owner": "Public-facing (SSR)",
+        "priority": "phase2",
+        "scope": "Shareable, read-only bookmark pages with theme customization",
+        "dependencies": ["M1", "M2", "M3"],
+        "tables": ["shared_links", "bookmarks", "categories", "profiles"],
+        "storage_buckets": [],
+        "components": [
+          {
+            "name": "portable-header",
+            "path": "src/components/portable/portable-header.tsx",
+            "features": [
+              "User avatar",
+              "Display name",
+              "Bio text",
+              "Total bookmark count",
+              "Stacked branding link (small footer)",
+              "Theme-aware styling"
+            ]
+          },
+          {
+            "name": "portable-grid",
+            "path": "src/components/portable/portable-grid.tsx",
+            "features": [
+              "Renders bookmarks grouped by category",
+              "Respects layout choice (grid / list / stack)",
+              "Respects visibility settings (tags, descriptions, dates)",
+              "External link click tracking (increment view_count)",
+              "Responsive layout",
+              "No auth required"
+            ]
+          },
+          {
+            "name": "portable-theme",
+            "path": "src/components/portable/portable-theme.tsx",
+            "features": [
+              "Applies selected theme: minimal, cards, masonry, terminal",
+              "Self-contained CSS per theme",
+              "Dark mode support (respects visitor's system preference)",
+              "Custom font per theme (e.g., terminal uses monospace)"
+            ]
+          }
+        ],
+        "api_routes": [],
+        "hooks": [],
+        "pages": [
+          {
+            "path": "src/app/p/[slug]/page.tsx",
+            "rendering": "SSR",
+            "description": "Public portable view. Fetches shared_link by slug, loads bookmarks and categories, renders with chosen theme/layout."
+          },
+          {
+            "path": "src/app/p/[slug]/opengraph-image.tsx",
+            "rendering": "Edge",
+            "description": "Dynamic OG image for social sharing. Shows user name, bookmark count, and theme preview."
+          }
+        ],
+        "security": [
+          "Uses anonymous Supabase client",
+          "RLS only exposes data where shared_links.is_active = true",
+          "No write operations exposed",
+          "Rate limit on view_count increment to prevent abuse"
+        ]
+      },
+  
+      "M8": {
+        "name": "Dashboard Shell",
+        "owner": "Frontend",
+        "priority": "mvp",
+        "scope": "Layout, navigation, and UI framework for authenticated experience",
+        "dependencies": ["M1", "M2", "M3", "M5"],
+        "tables": [],
+        "storage_buckets": [],
+        "components": [
+          {
+            "name": "sidebar",
+            "path": "src/components/layout/sidebar.tsx",
+            "features": [
+              "Category tree (from M2)",
+              "Collapse/expand toggle",
+              "Quick-add category button",
+              "Drag-and-drop reorder",
+              "'All Bookmarks' link at top",
+              "'Pinned' quick filter",
+              "'Archived' quick filter",
+              "Responsive: drawer on mobile, fixed on desktop",
+              "Resizable width"
+            ]
+          },
+          {
+            "name": "top-bar",
+            "path": "src/components/layout/top-bar.tsx",
+            "features": [
+              "Search bar (from M5)",
+              "Quick-add bookmark button",
+              "View toggle: stack / grid / list",
+              "User avatar dropdown (profile, settings, logout)",
+              "Breadcrumb (Home > Category name)",
+              "Notification indicator (dead links found)"
+            ]
+          },
+          {
+            "name": "mobile-nav",
+            "path": "src/components/layout/mobile-nav.tsx",
+            "features": [
+              "Bottom navigation bar (visible < 768px)",
+              "5 items: Home, Search, Add (center, prominent), Categories, Settings",
+              "Active state indicator",
+              "Add button opens bookmark-form modal"
+            ]
+          },
+          {
+            "name": "theme-toggle",
+            "path": "src/components/layout/theme-toggle.tsx",
+            "features": [
+              "Light / Dark / System toggle",
+              "Smooth transition animation",
+              "Persisted to user preferences",
+              "Icon changes based on active theme"
+            ]
+          }
+        ],
+        "api_routes": [],
+        "hooks": [
+          {
+            "name": "use-keyboard-shortcuts",
+            "path": "src/hooks/use-keyboard-shortcuts.ts",
+            "shortcuts": {
+              "/": "Focus search",
+              "Cmd+K": "Open command palette",
+              "N": "New bookmark",
+              "V": "Toggle view mode",
+              "Cmd+B": "Toggle sidebar",
+              "Escape": "Close modal / clear search"
+            }
+          },
+          {
+            "name": "use-media-query",
+            "path": "src/hooks/use-media-query.ts",
+            "returns": ["isMobile", "isTablet", "isDesktop"]
+          }
+        ]
+      },
+  
+      "M9": {
+        "name": "Storage & Asset Management",
+        "owner": "Supabase Storage",
+        "priority": "mvp",
+        "scope": "Persistent storage for favicons, OG images, and user avatars",
+        "dependencies": [],
+        "tables": [],
+        "storage_buckets": ["favicons", "og-images", "avatars"],
+        "components": [
+          {
+            "name": "favicon",
+            "path": "src/components/shared/favicon.tsx",
+            "features": [
+              "Renders cached favicon from Supabase Storage URL",
+              "Fallback: domain initial letter on colored circle",
+              "Lazy loading (loading='lazy')",
+              "Handles broken image (onError → fallback)",
+              "Size variants: sm (16px), md (24px), lg (32px)"
+            ]
+          }
+        ],
+        "api_routes": [],
+        "hooks": [],
+        "implementation_notes": [
+          "Serve via Supabase CDN with cache-control headers",
+          "User-scoped storage paths: {user_id}/favicons/{domain}.png",
+          "Orphan cleanup: database trigger or weekly cron job",
+          "Image optimization at upload time via Edge Function"
+        ]
+      },
+  
+      "M10": {
+        "name": "Link Health Monitor",
+        "owner": "Supabase Edge Functions + pg_cron",
+        "priority": "phase2",
+        "scope": "Detect broken, redirected, and timed-out bookmark URLs",
+        "dependencies": ["M3"],
+        "tables": ["bookmarks"],
+        "storage_buckets": [],
+        "components": [
+          {
+            "name": "link-status-badge",
+            "path": "src/components/shared/link-status-badge.tsx",
+            "features": [
+              "Small colored dot/icon per status",
+              "Tooltip: status label + last checked date",
+              "Status colors: alive=green, dead=red, redirected=yellow, timeout=gray"
+            ]
+          }
+        ],
+        "api_routes": [],
+        "hooks": [],
+        "edge_function": {
+          "name": "check-links",
+          "path": "supabase/functions/check-links/index.ts",
+          "trigger": "pg_cron (daily at 3:00 AM UTC)",
+          "behavior": [
+            "Select bookmarks where last_checked_at is NULL or > 7 days ago",
+            "Process in batches of 50 with 1s delay between batches",
+            "For each URL: send HEAD request with 10s timeout",
+            "Update link_status and last_checked_at",
+            "Status mapping: 200=alive, 301/302=redirected, 404/5xx=dead, timeout=timeout"
+          ]
+        },
+        "business_rules": [
+          "Check interval: weekly per bookmark",
+          "HEAD request only (no body download)",
+          "Respect robots.txt where possible",
+          "Dead links surfaced in dashboard via 'Broken Links' filter"
+        ]
+      },
+  
+      "M11": {
+        "name": "Browser Extension",
+        "owner": "Chrome/Firefox Extension",
+        "priority": "phase3",
+        "scope": "One-click bookmark saving from any webpage",
+        "dependencies": ["M1", "M3", "M4"],
+        "tables": ["bookmarks"],
+        "storage_buckets": [],
+        "components": [
+          {
+            "name": "extension-popup",
+            "path": "extensions/chrome/popup/",
+            "features": [
+              "Auto-filled URL and title from active tab",
+              "Metadata preview (favicon, OG image)",
+              "Category dropdown",
+              "Tag input",
+              "Pin toggle",
+              "Save button",
+              "Quick-save mode (save with defaults, no form)",
+              "Login prompt if not authenticated"
+            ]
+          },
+          {
+            "name": "extension-context-menu",
+            "path": "extensions/chrome/background/",
+            "features": [
+              "Right-click any link → 'Save to Stacked'",
+              "Right-click page → 'Save page to Stacked'",
+              "Keyboard shortcut (Ctrl+Shift+S)"
+            ]
+          }
+        ],
+        "api_routes": [],
+        "hooks": [],
+        "tech": {
+          "manifest": "V3 (Chrome)",
+          "api": "WebExtension API (Firefox)",
+          "auth": "Token exchange with Supabase Auth"
+        }
+      },
+  
+      "M12": {
+        "name": "Command Palette",
+        "owner": "Dashboard",
+        "priority": "phase2",
+        "scope": "Keyboard-first power-user interface for navigation and actions",
+        "dependencies": ["M2", "M3", "M5", "M8"],
+        "tables": [],
+        "storage_buckets": [],
+        "components": [
+          {
+            "name": "command-palette",
+            "path": "src/components/shared/command-palette.tsx",
+            "features": [
+              "Cmd+K / Ctrl+K activation",
+              "Unified search: bookmarks, categories, actions",
+              "Action commands: 'Add bookmark', 'Go to category', 'Toggle view', 'Open settings'",
+              "Fuzzy matching on all searchable content",
+              "Recent commands history (last 5)",
+              "Keyboard navigation (up/down/enter/esc)",
+              "Grouped results: Bookmarks, Categories, Actions",
+              "Icons per result type"
+            ]
+          }
+        ],
+        "api_routes": [],
+        "hooks": [],
+        "tech": "cmdk library (used by shadcn/ui)"
+      },
+  
+      "M13": {
+        "name": "Analytics & Insights",
+        "owner": "Dashboard",
+        "priority": "phase3",
+        "scope": "Personal bookmark usage statistics and visualizations",
+        "dependencies": ["M3", "M10"],
+        "tables": ["bookmarks", "categories"],
+        "storage_buckets": [],
+        "components": [
+          {
+            "name": "stats-cards",
+            "path": "src/components/analytics/stats-cards.tsx",
+            "features": [
+              "4-card row layout",
+              "Cards: Total Bookmarks, Added This Week, Total Categories, Broken Links",
+              "Each card: icon + count + delta indicator (up/down arrow with percentage)"
+            ]
+          },
+          {
+            "name": "growth-chart",
+            "path": "src/components/analytics/growth-chart.tsx",
+            "features": [
+              "Line chart (Recharts)",
+              "Bookmarks added per week over last 12 weeks",
+              "Cumulative total overlay line (optional toggle)",
+              "Tooltip with exact count per week",
+              "Responsive sizing"
+            ]
+          },
+          {
+            "name": "category-breakdown",
+            "path": "src/components/analytics/category-breakdown.tsx",
+            "features": [
+              "Horizontal bar chart or donut chart",
+              "Bookmark count per category",
+              "Category color used in chart",
+              "Percentage labels",
+              "Click to navigate to category"
+            ]
+          },
+          {
+            "name": "tag-cloud",
+            "path": "src/components/analytics/tag-cloud.tsx",
+            "features": [
+              "Weighted tag display (larger = more frequent)",
+              "Top 20 tags by frequency",
+              "Click to filter bookmarks by tag",
+              "Alternative: ranked list view toggle"
+            ]
+          }
+        ],
+        "api_routes": [
+          { "method": "GET", "path": "/api/analytics/overview", "description": "Dashboard stats aggregation" },
+          { "method": "GET", "path": "/api/analytics/growth", "description": "Weekly growth data for chart" },
+          { "method": "GET", "path": "/api/analytics/tags", "description": "Tag frequency data" }
+        ],
+        "hooks": [],
+        "implementation_notes": [
+          "All queries are PostgreSQL aggregations — no separate analytics DB",
+          "Overview stats cached for 5 minutes (stale-while-revalidate)",
+          "Growth data grouped by date_trunc('week', created_at)"
+        ]
+      },
+  
+      "M14": {
+        "name": "Settings & Preferences",
+        "owner": "Dashboard",
+        "priority": "mvp",
+        "scope": "User configuration, account management, and app preferences",
+        "dependencies": ["M1", "M6", "M7"],
+        "tables": ["profiles", "shared_links"],
+        "storage_buckets": ["avatars"],
+        "components": [
+          {
+            "name": "settings-profile",
+            "path": "src/app/(dashboard)/settings/profile/page.tsx",
+            "features": [
+              "Username edit (with availability check)",
+              "Display name edit",
+              "Avatar upload/change",
+              "Bio textarea"
+            ]
+          },
+          {
+            "name": "settings-preferences",
+            "path": "src/app/(dashboard)/settings/page.tsx",
+            "features": [
+              "Theme selector (light / dark / system)",
+              "Default view (stack / grid / list)",
+              "Default category for new bookmarks",
+              "Items per page (20 / 40 / 60 / 100)",
+              "Show favicons toggle",
+              "Show OG images toggle",
+              "Compact mode toggle"
+            ]
+          },
+          {
+            "name": "settings-shared-links",
+            "path": "src/app/(dashboard)/settings/shared-links/page.tsx",
+            "features": [
+              "List of all shared links",
+              "Toggle active/inactive",
+              "Copy link button",
+              "Edit slug, title, theme, layout",
+              "Delete shared link",
+              "Create new shared link",
+              "View count display"
+            ]
+          },
+          {
+            "name": "settings-danger-zone",
+            "path": "src/app/(dashboard)/settings/page.tsx",
+            "features": [
+              "Delete account button",
+              "Confirmation modal with username typing",
+              "Cascade delete: all bookmarks, categories, shared links, storage"
+            ]
+          }
+        ],
+        "api_routes": [],
+        "hooks": []
+      },
+  
+      "M15": {
+        "name": "Billing & Tiers",
+        "owner": "Backend + Dashboard (Settings)",
+        "priority": "phase4",
+        "scope": "Stripe integration, Pro plan subscription, usage metering, upgrade/downgrade flows, invoicing",
+        "dependencies": ["M1", "M14"],
+        "tables": ["profiles", "subscriptions"],
+        "storage_buckets": [],
+        "status": "placeholder",
+        "planned_tables": {
+          "subscriptions": {
+            "description": "Stripe subscription records linked to user profiles",
+            "columns": {
+              "id": { "type": "UUID", "primary_key": true },
+              "user_id": { "type": "UUID", "foreign_key": "profiles.id" },
+              "stripe_customer_id": { "type": "TEXT", "unique": true },
+              "stripe_subscription_id": { "type": "TEXT", "unique": true },
+              "plan": { "type": "TEXT", "enum": ["free", "pro"] },
+              "status": { "type": "TEXT", "enum": ["active", "past_due", "canceled", "trialing"] },
+              "current_period_start": { "type": "TIMESTAMPTZ" },
+              "current_period_end": { "type": "TIMESTAMPTZ" },
+              "cancel_at_period_end": { "type": "BOOLEAN", "default": false },
+              "created_at": { "type": "TIMESTAMPTZ" },
+              "updated_at": { "type": "TIMESTAMPTZ" }
+            }
+          }
+        },
+        "planned_components": [
+          {
+            "name": "upgrade-prompt",
+            "description": "Modal shown when user hits a tier limit. Shows current usage vs limit, Pro benefits, and CTA to upgrade."
+          },
+          {
+            "name": "pricing-page",
+            "description": "Public pricing comparison (Free vs Pro) with feature matrix and Stripe Checkout CTA."
+          },
+          {
+            "name": "billing-settings",
+            "description": "Settings page showing current plan, usage meters, invoice history, cancel/downgrade option, Stripe Customer Portal link."
+          }
+        ],
+        "planned_api_routes": [
+          { "method": "POST", "path": "/api/billing/checkout", "description": "Create Stripe Checkout session for Pro upgrade" },
+          { "method": "POST", "path": "/api/billing/portal", "description": "Create Stripe Customer Portal session" },
+          { "method": "POST", "path": "/api/billing/webhook", "description": "Stripe webhook handler (subscription events)" }
+        ],
+        "planned_tech": {
+          "payment": { "name": "Stripe", "products": ["Checkout", "Customer Portal", "Webhooks", "Billing"] },
+          "integration": "Stripe webhook updates profiles.tier and subscriptions table"
+        },
+        "notes": [
+          "Tier enforcement already built into M1 API layer — M15 only needs to flip profiles.tier from 'free' to 'pro'",
+          "Stripe webhook is the single source of truth for subscription status",
+          "Downgrade: on subscription cancel, tier reverts to 'free' at period end; data is NOT deleted but limits re-apply",
+          "Usage metering: bookmark/category/shared_link counts checked against TIER_LIMITS on every create",
+          "GDPR data export can be bundled into this module as a settings feature"
+        ]
+      }
+    },
+  
+    "usp_features": {
+      "stack_view": {
+        "name": "Stack View",
+        "priority": "mvp",
+        "description": "Visual card pile metaphor for bookmark collections. Hover to peek, click to fan out.",
+        "component": "bookmark-stack",
+        "tech": ["Framer Motion (spring animations)", "CSS transforms", "React state"],
+        "differentiator": "No bookmark manager uses a spatial/tactile card stack metaphor. Memorable and brandable."
+      },
+      "portable_pages": {
+        "name": "Portable Pages",
+        "priority": "phase2",
+        "description": "Customizable public start pages at stacked.app/username with theme selection.",
+        "component": "portable-*",
+        "tech": ["Next.js SSR", "Dynamic OG images", "Supabase anonymous auth"],
+        "differentiator": "Linktree for curated knowledge. Developers share toolkits, students share resources.",
+        "monetization": "Free: 1 page. Pro: unlimited pages + custom themes + custom domains."
+      },
+      "smart_collections": {
+        "name": "Smart Collections",
+        "priority": "phase3",
+        "description": "Rule-based auto-categorization that suggests groupings based on domain and content patterns.",
+        "component": "collection-rules engine",
+        "tech": ["Supabase Edge Function (on bookmark insert)", "Pattern matching", "collection_rules table"],
+        "differentiator": "Reduces the biggest pain point: manual organizing. Makes the product feel intelligent."
+      }
+    },
+  
+    "roadmap": {
+      "phase1_mvp": {
+        "timeline": "Weeks 1-4",
+        "modules": ["M1", "M2", "M3", "M4", "M5", "M8", "M9", "M14"],
+        "deliverables": [
+          "Auth (magic link + OAuth + email verification)",
+          "Onboarding wizard (3-step: username → categories → first bookmark)",
+          "Tier enforcement groundwork (free limits enforced at API layer)",
+          "Category CRUD with nesting",
+          "Bookmark CRUD with metadata auto-fetch",
+          "Full-text search with filters",
+          "Dashboard shell (sidebar, top bar, views)",
+          "Stack View (USP)",
+          "Asset storage (favicons, OG images)",
+          "User settings and preferences"
+        ]
+      },
+      "phase2": {
+        "timeline": "Weeks 5-7",
+        "modules": ["M6", "M7", "M10", "M12"],
+        "deliverables": [
+          "Import from browser HTML / JSON / CSV",
+          "Export to JSON / HTML / CSV",
+          "Portable public view with themes",
+          "Link health monitoring",
+          "Command palette (Cmd+K)"
+        ]
+      },
+      "phase3": {
+        "timeline": "Weeks 8-10",
+        "modules": ["M11", "M13"],
+        "deliverables": [
+          "Chrome/Firefox browser extension",
+          "Analytics dashboard",
+          "Smart Collections engine",
+          "Performance optimization and polish"
+        ]
+      },
+      "phase4": {
+        "timeline": "TBD (post-launch, when traction warrants monetization)",
+        "modules": ["M15"],
+        "deliverables": [
+          "Stripe integration (Checkout, Customer Portal, Webhooks)",
+          "Pro plan subscription ($X/month or $Y/year)",
+          "Upgrade/downgrade flows",
+          "Billing settings page with invoice history",
+          "Usage meters on dashboard (bookmarks used: 342/500)",
+          "Upgrade prompt on tier limit hit",
+          "GDPR data export"
+        ]
+      }
+    },
+  
+    "environment_variables": {
+      "public": {
+        "NEXT_PUBLIC_SUPABASE_URL": "Supabase project URL",
+        "NEXT_PUBLIC_SUPABASE_ANON_KEY": "Supabase anonymous key",
+        "NEXT_PUBLIC_APP_URL": "Application URL (http://localhost:3000 in dev)",
+        "NEXT_PUBLIC_APP_NAME": "Stacked",
+        "NEXT_PUBLIC_VERCEL_ANALYTICS_ID": "Vercel Analytics ID (optional)"
+      },
+      "server_only": {
+        "SUPABASE_SERVICE_ROLE_KEY": "Supabase service role key (NEVER expose to client)",
+        "SENTRY_DSN": "Sentry error tracking DSN (optional)",
+        "STRIPE_SECRET_KEY": "Stripe secret key (Phase 4 — M15 only)",
+        "STRIPE_WEBHOOK_SECRET": "Stripe webhook signing secret (Phase 4 — M15 only)"
+      }
+    },
+  
+    "limits": {
+      "MAX_BOOKMARKS_FREE": 500,
+      "MAX_BOOKMARKS_PRO": 10000,
+      "MAX_CATEGORIES_FREE": 20,
+      "MAX_CATEGORIES_PRO": 200,
+      "MAX_TAGS_PER_BOOKMARK": 10,
+      "MAX_TAG_LENGTH": 30,
+      "MAX_TITLE_LENGTH": 200,
+      "MAX_DESCRIPTION_LENGTH": 500,
+      "MAX_IMPORT_SIZE_MB": 10,
+      "MAX_SHARED_LINKS_FREE": 1,
+      "MAX_SHARED_LINKS_PRO": 20,
+      "METADATA_FETCH_TIMEOUT_MS": 8000,
+      "SEARCH_DEBOUNCE_MS": 300,
+      "LINK_CHECK_BATCH_SIZE": 50,
+      "STALE_BOOKMARK_DAYS": 90,
+      "FAVICON_MAX_SIZE_KB": 500,
+      "OG_IMAGE_MAX_SIZE_KB": 2048
+    }
+  }
