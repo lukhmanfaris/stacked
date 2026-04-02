@@ -11,6 +11,7 @@
 - [Project Structure](#project-structure)
 - [Variable Structures](#variable-structures)
 - [Module Reference](#module-reference)
+- [Build Order](#build-order)
 - [Component Features](#component-features)
 - [Database Schema](#database-schema)
 - [API Routes](#api-routes)
@@ -737,19 +738,48 @@ export const onboardingSchema = z.object({
 
 ## Module Reference
 
-All 15 modules are defined in the companion `stacked-modules.json` file. Each module entry includes:
+All 15 modules are defined in `stacked module.json`. Each module entry includes:
 
-- **id** — Unique key (M1–M14)
+- **id** — Unique key (M1–M15)
 - **name** — Human-readable module name
 - **owner** — Which layer is responsible
 - **scope** — What the module covers
-- **dependencies** — Which modules it requires
+- **dependencies** — Which modules it requires (never start a module before all deps are done)
 - **tables** — Database tables it reads/writes
 - **components** — UI components that belong to it
 - **api_routes** — API endpoints it exposes
-- **priority** — `mvp`, `phase2`, or `phase3`
+- **priority** — `mvp`, `phase2`, `phase3`, or `phase4`
 
-See `stacked-modules.json` for the full machine-readable specification.
+The file also contains a top-level `build_order` array — the canonical implementation sequence with per-module status tracking. Update `build_order.sequence[n].status` to `"done"` as each module ships.
+
+---
+
+## Build Order
+
+Derived from the dependency graph in `stacked module.json`. Never start a module before all its listed deps are complete.
+
+| Step | Module | Name                      | Deps                  | Phase   | Notes |
+|------|--------|---------------------------|-----------------------|---------|-------|
+| 1    | M1     | Auth & Identity           | —                     | MVP     | ✅ Done |
+| 2    | M2     | Category Engine           | M1                    | MVP     | ✅ Done |
+| 3    | M9     | Storage & Asset Mgmt      | —                     | MVP     | ⬅ **Next** — no deps, unblocks M4 |
+| 4    | M4     | Metadata Fetcher          | M9                    | MVP     | |
+| 5    | M3     | Bookmark Core             | M1, M2, M4            | MVP     | |
+| 6    | M5     | Search                    | M3                    | MVP     | |
+| 7    | M8     | Dashboard Shell           | M1, M2, M3, M5        | MVP     | |
+| 8    | M14    | Settings & Preferences    | M1                    | MVP     | Core only (profile/prefs/danger-zone). `settings-shared-links` is a placeholder until M7. |
+| 9    | M6     | Import / Export           | M2, M3                | Phase 2 | |
+| 10   | M7     | Portable Public View      | M1, M2, M3            | Phase 2 | After M7 ships, activate `settings-shared-links` in M14. |
+| 11   | M10    | Link Health Monitor       | M3                    | Phase 2 | |
+| 12   | M12    | Command Palette           | M2, M3, M5, M8        | Phase 2 | |
+| 13   | M11    | Browser Extension         | M1, M3, M4            | Phase 3 | |
+| 14   | M13    | Analytics & Insights      | M3, M10               | Phase 3 | |
+| 15   | M15    | Billing & Tiers           | M1, M14               | Phase 4 | |
+
+**Key rules:**
+- M9 has no dependencies — it can be built in parallel with M2 if needed
+- M14's `settings-shared-links` component is deferred: scaffold as a "Coming soon" placeholder in MVP, fully activate after M7
+- M6 and M7 are independent of each other (both need M3); do M6 first as it uses existing tables
 
 ---
 

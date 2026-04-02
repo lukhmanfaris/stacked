@@ -853,30 +853,54 @@
         "name": "Storage & Asset Management",
         "owner": "Supabase Storage",
         "priority": "mvp",
-        "scope": "Persistent storage for favicons, OG images, and user avatars",
+        "scope": "Persistent storage for favicons, OG images, and user avatars. Favicons and OG images are stored domain-level (dedup) — not per user — to prevent ~30x storage inflation. Avatars remain user-scoped.",
         "dependencies": [],
-        "tables": [],
+        "tables": ["domain_assets"],
         "storage_buckets": ["favicons", "og-images", "avatars"],
+        "storage_paths": {
+          "favicons": "favicons/{domain_hash}.png",
+          "og-images": "og-images/{domain_hash}.webp",
+          "avatars": "avatars/{user_id}/avatar.webp",
+          "domain_hash_spec": "first 16 hex chars of SHA-256(normalize(domain)), where normalize = lowercase + strip www."
+        },
         "components": [
           {
             "name": "favicon",
             "path": "src/components/shared/favicon.tsx",
             "features": [
-              "Renders cached favicon from Supabase Storage URL",
-              "Fallback: domain initial letter on colored circle",
-              "Lazy loading (loading='lazy')",
-              "Handles broken image (onError → fallback)",
-              "Size variants: sm (16px), md (24px), lg (32px)"
+              "Receives faviconUrl prop (null = show fallback immediately)",
+              "On image load error, falls back to domain initial on colored square",
+              "Color is deterministic from domain string using CATEGORY_COLORS",
+              "Size variants: 16 | 20 | 24 | 32 px",
+              "No fetch logic — purely display from passed-in URL"
             ]
           }
         ],
-        "api_routes": [],
+        "api_routes": [
+          {
+            "method": "POST",
+            "path": "/api/storage/avatar",
+            "auth": "required",
+            "body": "multipart/form-data { file: File }",
+            "response": "{ avatar_url: string }"
+          },
+          {
+            "method": "DELETE",
+            "path": "/api/storage/avatar",
+            "auth": "required",
+            "response": "{ avatar_url: null }"
+          }
+        ],
         "hooks": [],
         "implementation_notes": [
-          "Serve via Supabase CDN with cache-control headers",
-          "User-scoped storage paths: {user_id}/favicons/{domain}.png",
-          "Orphan cleanup: database trigger or weekly cron job",
-          "Image optimization at upload time via Edge Function"
+          "domain_assets table is the source of truth for fetch status — M4 writes it, M9 creates it",
+          "checkDomainAssetStatus() queries domain_assets table, not a storage HEAD request (faster)",
+          "maybe_orphan_domain() SQL function is created here; wired to bookmarks delete trigger in M3",
+          "Orphan cleanup: 7-day grace period → cleanup edge function (M4 scope) + weekly cron",
+          "Favicons: 90-day TTL. OG images: 30-day TTL (can change more often)",
+          "Avatars: cache-control 3600s. Domain assets: cache-control 86400s",
+          "Service role client required to write favicons/og-images (no user-facing RLS write policy)",
+          "Storage util library: src/lib/storage/index.ts + src/lib/storage/domain-assets.ts"
         ]
       },
   
@@ -1060,9 +1084,9 @@
         "name": "Settings & Preferences",
         "owner": "Dashboard",
         "priority": "mvp",
-        "scope": "User configuration, account management, and app preferences",
-        "dependencies": ["M1", "M6", "M7"],
-        "tables": ["profiles", "shared_links"],
+        "scope": "User configuration, account management, and app preferences. Core settings (profile, preferences, danger zone) are MVP. Shared-links management is deferred until M7 (Portable Public View) is built, since it depends on the shared_links table that M7 creates.",
+        "dependencies": ["M1"],
+        "tables": ["profiles"],
         "storage_buckets": ["avatars"],
         "components": [
           {
@@ -1091,6 +1115,8 @@
           {
             "name": "settings-shared-links",
             "path": "src/app/(dashboard)/settings/shared-links/page.tsx",
+            "deferred_until": "M7",
+            "note": "Requires shared_links table created by M7. Build the route shell in MVP with a 'Coming soon' placeholder; activate when M7 is complete.",
             "features": [
               "List of all shared links",
               "Toggle active/inactive",
@@ -1256,6 +1282,35 @@
       }
     },
   
+    "build_order": {
+      "_comment": "Canonical implementation sequence derived from module dependency graph. Always build a module after all its dependencies are complete. Status: done | next | pending",
+      "sequence": [
+        { "step": 1,  "id": "M1",  "name": "Auth & Identity",          "deps": [],                     "status": "done",    "phase": "mvp" },
+        { "step": 2,  "id": "M2",  "name": "Category Engine",           "deps": ["M1"],                 "status": "done",    "phase": "mvp" },
+        { "step": 3,  "id": "M9",  "name": "Storage & Asset Management","deps": [],                     "status": "done",    "phase": "mvp" },
+        { "step": 4,  "id": "M4",  "name": "Metadata Fetcher",          "deps": ["M9"],                 "status": "done",    "phase": "mvp" },
+        { "step": 5,  "id": "M3",  "name": "Bookmark Core",             "deps": ["M1","M2","M4"],       "status": "done",    "phase": "mvp" },
+        { "step": 6,  "id": "M5",  "name": "Search",                    "deps": ["M3"],                 "status": "done",    "phase": "mvp" },
+        { "step": 7,  "id": "M8",  "name": "Dashboard Shell",           "deps": ["M1","M2","M3","M5"],  "status": "done",    "phase": "mvp" },
+        { "step": 8,  "id": "M14", "name": "Settings & Preferences",    "deps": ["M1"],                 "status": "done",    "phase": "mvp",    "note": "Core settings (profile, preferences, danger zone) only. settings-shared-links page is a placeholder until M7." },
+        { "step": 9,  "id": "M6",  "name": "Import / Export",           "deps": ["M2","M3"],            "status": "next",    "phase": "phase2" },
+        { "step": 10, "id": "M7",  "name": "Portable Public View",      "deps": ["M1","M2","M3"],       "status": "pending", "phase": "phase2", "note": "After M7 is complete, activate settings-shared-links in M14." },
+        { "step": 11, "id": "M10", "name": "Link Health Monitor",       "deps": ["M3"],                 "status": "pending", "phase": "phase2" },
+        { "step": 12, "id": "M12", "name": "Command Palette",           "deps": ["M2","M3","M5","M8"],  "status": "pending", "phase": "phase2" },
+        { "step": 13, "id": "M11", "name": "Browser Extension",         "deps": ["M1","M3","M4"],       "status": "pending", "phase": "phase3" },
+        { "step": 14, "id": "M13", "name": "Analytics & Insights",      "deps": ["M3","M10"],           "status": "pending", "phase": "phase3" },
+        { "step": 15, "id": "M15", "name": "Billing & Tiers",           "deps": ["M1","M14"],           "status": "pending", "phase": "phase4" }
+      ],
+      "rules": [
+        "Never start a module before all its deps are marked done",
+        "M9 has no deps — can be built in parallel with M2 if needed",
+        "M14 core (profile/preferences/danger-zone) needs only M1; build it at step 8 after M8 for logical UX grouping",
+        "settings-shared-links (M14) is a deferred component — scaffold as placeholder in MVP, activate after M7",
+        "M6 and M7 are interchangeable in order (both depend on M3); do M6 first since it uses existing tables",
+        "Update this build_order.sequence[n].status to 'done' as each module ships"
+      ]
+    },
+
     "environment_variables": {
       "public": {
         "NEXT_PUBLIC_SUPABASE_URL": "Supabase project URL",
