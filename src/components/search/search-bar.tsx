@@ -32,7 +32,6 @@ export function SearchBar({
   const inputRef = useRef<HTMLInputElement>(null)
   const [showRecent, setShowRecent] = useState(false)
 
-  // Focus on "/" keypress when no other input is active
   useEffect(() => {
     function handleKeyDown(e: KeyboardEvent) {
       if (e.key !== '/') return
@@ -45,7 +44,6 @@ export function SearchBar({
     return () => document.removeEventListener('keydown', handleKeyDown)
   }, [])
 
-  // Escape clears and blurs
   function handleKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
     if (e.key === 'Escape') {
       if (value) {
@@ -62,7 +60,6 @@ export function SearchBar({
   }
 
   function handleBlur() {
-    // Delay so click on recent item registers first
     setTimeout(() => setShowRecent(false), 150)
   }
 
@@ -79,13 +76,13 @@ export function SearchBar({
 
   return (
     <div className={cn('relative w-full', className)}>
-      <div className="relative flex items-center">
+      <div className="relative flex items-center border-b border-[var(--nd-border)] focus-within:border-[var(--nd-border-visible)] transition-colors">
         {/* Leading icon */}
-        <div className="pointer-events-none absolute left-3 flex items-center">
+        <div className="pointer-events-none flex items-center pr-2">
           {isSearching ? (
-            <div className="size-4 animate-spin rounded-full border-2 border-muted border-t-foreground" />
+            <div className="size-3.5 animate-spin rounded-full border border-[var(--nd-border-visible)] border-t-[var(--nd-text-primary)]" />
           ) : (
-            <Search className="size-4 text-muted-foreground" aria-hidden="true" />
+            <Search className="size-3.5 text-[var(--nd-text-disabled)]" aria-hidden="true" />
           )}
         </div>
 
@@ -102,31 +99,29 @@ export function SearchBar({
           onBlur={handleBlur}
           placeholder={placeholder}
           className={cn(
-            'h-10 w-full rounded-xl border border-input bg-transparent py-2 pl-9 pr-16 text-sm',
-            'outline-none transition-colors placeholder:text-muted-foreground',
-            'focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/50',
+            'h-9 w-full bg-transparent py-2 font-mono text-sm text-[var(--nd-text-primary)]',
+            'outline-none placeholder:text-[var(--nd-text-disabled)] placeholder:font-mono',
           )}
         />
 
-        {/* Trailing: clear button or "/" hint */}
-        <div className="absolute right-3 flex items-center gap-1.5">
+        {/* Trailing */}
+        <div className="flex items-center gap-1.5 pl-2">
           {value ? (
             <button
               type="button"
               aria-label="Clear search"
               onClick={() => { onClear(); inputRef.current?.focus() }}
-              className="rounded p-0.5 text-muted-foreground hover:text-foreground"
+              className="text-[var(--nd-text-disabled)] hover:text-[var(--nd-text-secondary)] transition-colors"
             >
-              <X className="size-4" />
+              <X className="size-3.5" />
             </button>
           ) : (
-            <kbd className="hidden select-none rounded border bg-muted px-1.5 py-0.5 text-xs text-muted-foreground sm:inline-block">
+            <kbd className="hidden select-none font-mono text-[10px] uppercase tracking-[0.06em] text-[var(--nd-text-disabled)] sm:inline-block">
               /
             </kbd>
           )}
-          {/* Result count badge */}
           {resultCount !== undefined && value && !isSearching && (
-            <span className="text-xs tabular-nums text-muted-foreground">
+            <span className="nd-label tabular-nums text-[var(--nd-text-disabled)]">
               {resultCount.toLocaleString()}
             </span>
           )}
@@ -135,17 +130,19 @@ export function SearchBar({
 
       {/* Recent searches dropdown */}
       {showRecent && recentSearches.length > 0 && (
-        <div className="absolute left-0 right-0 top-full z-50 mt-1 overflow-hidden rounded-xl border bg-popover shadow-md">
-          <p className="px-3 py-2 text-xs font-medium text-muted-foreground">Recent searches</p>
+        <div className="absolute left-0 right-0 top-full z-50 mt-1 overflow-hidden rounded-[8px] border border-[var(--nd-border-visible)] bg-[var(--nd-surface)]">
+          <p className="nd-label border-b border-[var(--nd-border)] px-3 py-2 text-[var(--nd-text-disabled)]">
+            Recent
+          </p>
           {recentSearches.map(q => (
             <button
               key={q}
               type="button"
               onMouseDown={() => selectRecent(q)}
-              className="flex w-full items-center gap-2.5 px-3 py-2 text-sm hover:bg-muted"
+              className="flex w-full items-center gap-2.5 border-b border-[var(--nd-border)] px-3 py-2.5 last:border-b-0 hover:bg-[var(--nd-surface-raised)] transition-colors"
             >
-              <Clock className="size-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
-              <span className="truncate">{q}</span>
+              <Clock className="size-3 shrink-0 text-[var(--nd-text-disabled)]" aria-hidden="true" />
+              <span className="truncate font-mono text-xs text-[var(--nd-text-secondary)]">{q}</span>
             </button>
           ))}
         </div>

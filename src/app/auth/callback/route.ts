@@ -10,7 +10,6 @@ export async function GET(request: NextRequest) {
   // Supabase forwards auth errors as query params (e.g. expired OTP)
   const errorCode = searchParams.get('error_code')
   if (errorCode) {
-    const description = searchParams.get('error_description') ?? 'auth_error'
     const friendly = errorCode === 'otp_expired' ? 'link_expired' : 'auth_error'
     return NextResponse.redirect(`${origin}/login?error=${friendly}`)
   }
@@ -20,21 +19,19 @@ export async function GET(request: NextRequest) {
   }
 
   const supabase = await createClient()
-  const { error } = await supabase.auth.exchangeCodeForSession(code)
 
-  if (error) {
-    console.error('[callback] code exchange error:', error.message)
+  // exchangeCodeForSession returns the session directly — no need to call
+  // getUser() separately. A second getUser() call writes updated tokens to
+  // cookies again, which triggers a lock race when the browser client
+  // initializes from those same cookies immediately after the redirect.
+  const { data: { session }, error } = await supabase.auth.exchangeCodeForSession(code)
+
+  if (error || !session) {
+    console.error('[callback] code exchange error:', error?.message)
     return NextResponse.redirect(`${origin}/login?error=auth_error`)
   }
 
-  // Get user after session is established
-  const { data: { user } } = await supabase.auth.getUser()
-
-  if (!user) {
-    return NextResponse.redirect(`${origin}/login`)
-  }
-
-  // Note: last_login_at is updated automatically by the on_auth_user_signin DB trigger
+  const user = session.user
 
   // Check onboarding status
   const { data: profile } = await supabase
@@ -47,7 +44,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.redirect(`${origin}/onboarding`)
   }
 
-  // Honour `next` param for post-login redirects (only allow relative paths)
+  // Honour `next` param — only allow relative paths
   const redirectTo = next.startsWith('/') ? next : '/dashboard'
   return NextResponse.redirect(`${origin}${redirectTo}`)
 }

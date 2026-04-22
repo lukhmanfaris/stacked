@@ -251,16 +251,24 @@ export function BookmarkForm({
           value={watch('category_id')}
           onValueChange={v => { if (v) setValue('category_id', v) }}
         >
-          <SelectTrigger id="category" className="w-full" aria-invalid={!!errors.category_id}>
-            <SelectValue placeholder="Select a category" />
+          <SelectTrigger id="category" className="w-full overflow-hidden" aria-invalid={!!errors.category_id}>
+            <SelectValue className="truncate">
+              {(() => {
+                const selectedCat = flatCategories.find(c => c.id === watch('category_id'))
+                if (!selectedCat) return <span className="text-muted-foreground">Select a category</span>
+                return (
+                  <span className="flex min-w-0 items-center gap-1.5">
+                    <span className="inline-block size-2 shrink-0 rounded-full" style={{ backgroundColor: selectedCat.color }} />
+                    <span className="truncate">{selectedCat.name}</span>
+                  </span>
+                )
+              })()}
+            </SelectValue>
           </SelectTrigger>
           <SelectContent>
             {flatCategories.map(cat => (
               <SelectItem key={cat.id} value={cat.id}>
-                <span
-                  className="mr-1.5 inline-block size-2 rounded-full"
-                  style={{ backgroundColor: cat.color }}
-                />
+                <span className="mr-1.5 inline-block size-2 shrink-0 rounded-full" style={{ backgroundColor: cat.color }} />
                 {cat.name}
               </SelectItem>
             ))}

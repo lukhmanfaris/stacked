@@ -78,9 +78,11 @@ export async function PATCH(
 }
 
 // ─── DELETE /api/bookmarks/[id] ───────────────────────────────────────────────
+// Default: soft-delete (sets deleted_at = now()).
+// ?hard=true: permanent delete + orphan-domain cleanup. Used when emptying Trash.
 
 export async function DELETE(
-  _request: Request,
+  request: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
   try {
@@ -89,7 +91,8 @@ export async function DELETE(
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) throw new UnauthorizedError()
 
-    // Fetch domain before delete (needed for maybe_orphan_domain)
+    const hard = new URL(request.url).searchParams.get('hard') === 'true'
+
     const { data: bookmark } = await supabase
       .from('bookmarks')
       .select('id, domain')
@@ -99,18 +102,31 @@ export async function DELETE(
 
     if (!bookmark) throw new NotFoundError('Bookmark', id)
 
-    const { error } = await supabase
-      .from('bookmarks')
-      .delete()
-      .eq('id', id)
-      .eq('user_id', user.id)
+    if (hard) {
+      const { error } = await supabase
+        .from('bookmarks')
+        .delete()
+        .eq('id', id)
+        .eq('user_id', user.id)
 
-    if (error) throw error
+      if (error) throw error
 
-    // Wire M9's orphan-detection function
-    await supabase.rpc('maybe_orphan_domain', { p_domain: bookmark.domain })
+      try {
+        await supabase.rpc('maybe_orphan_domain', { p_domain: bookmark.domain })
+      } catch (e) {
+        console.error('[orphan-domain] cleanup failed for', bookmark.domain, e)
+      }
+    } else {
+      const { error } = await supabase
+        .from('bookmarks')
+        .update({ deleted_at: new Date().toISOString() })
+        .eq('id', id)
+        .eq('user_id', user.id)
 
-    return apiSuccess({ id })
+      if (error) throw error
+    }
+
+    return apiSuccess({ id, hard })
   } catch (error) {
     return handleApiError(error)
   }

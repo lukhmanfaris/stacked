@@ -24,9 +24,10 @@ export const bookmarkSchema = z.object({
   url: z.string().url('Must be a valid URL').max(2048),
   title: z.string().max(200).optional(),
   description: z.string().max(500).optional(),
-  category_id: z.string().uuid(),
+  category_id: z.string().uuid().nullable().optional(),
   tags: z.array(z.string().max(30)).max(10).optional().default([]),
   is_pinned: z.boolean().optional().default(false),
+  is_favorite: z.boolean().optional().default(false),
 })
 
 export const categorySchema = z.object({
@@ -38,19 +39,21 @@ export const categorySchema = z.object({
 })
 
 export const sharedLinkSchema = z.object({
+  title: z.string().max(100).optional(),
+  description: z.string().max(300).optional(),
   slug: z
     .string()
     .min(3)
     .max(40)
-    .regex(/^[a-z0-9-]+$/, 'Only lowercase letters, numbers, and hyphens'),
-  category_id: z.string().uuid().nullable().optional(),
-  title: z.string().max(100).optional(),
-  description: z.string().max(300).optional(),
-  theme: z.enum(['minimal', 'cards', 'masonry', 'terminal']),
-  layout: z.enum(['grid', 'list', 'stack']),
-  show_tags: z.boolean().optional().default(true),
+    .regex(/^[a-z0-9-]+$/, 'Only lowercase letters, numbers, and hyphens')
+    .optional(),
+  layout: z.enum(['minimal', 'cards', 'masonry', 'terminal']).optional().default('cards'),
+  theme: z.enum(['light', 'dark']).optional().default('light'),
+  category_ids: z.array(z.string().uuid()).optional().default([]),
+  is_active: z.boolean().optional().default(true),
+  show_favicons: z.boolean().optional().default(true),
   show_descriptions: z.boolean().optional().default(true),
-  show_dates: z.boolean().optional().default(false),
+  show_tags: z.boolean().optional().default(true),
 })
 
 export const searchParamsSchema = z.object({

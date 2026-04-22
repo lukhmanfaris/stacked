@@ -15,9 +15,13 @@ import type {
 
 function buildQuery(filters: BookmarkFilters): string {
   const params = new URLSearchParams()
-  if (filters.category_id) params.set('category_id', filters.category_id)
+  if (filters.query) params.set('query', filters.query)
+  if (filters.category_id === null) params.set('category_id', 'null')
+  else if (filters.category_id) params.set('category_id', filters.category_id)
   if (filters.is_pinned !== undefined) params.set('is_pinned', String(filters.is_pinned))
   if (filters.is_archived !== undefined) params.set('is_archived', String(filters.is_archived))
+  if (filters.is_favorite !== undefined) params.set('is_favorite', String(filters.is_favorite))
+  if (filters.is_trashed !== undefined) params.set('is_trashed', String(filters.is_trashed))
   if (filters.link_status) params.set('link_status', filters.link_status)
   if (filters.tags?.length) params.set('tags', filters.tags.join(','))
   if (filters.sort_by) params.set('sort_by', filters.sort_by)
@@ -29,9 +33,15 @@ function buildQuery(filters: BookmarkFilters): string {
 }
 
 async function fetchBookmarks(filters: BookmarkFilters): Promise<BookmarkListResponse> {
-  const res = await fetch(`/api/bookmarks${buildQuery(filters)}`)
+  // Route to search endpoint when query present
+  const endpoint = filters.query?.trim() ? '/api/search' : '/api/bookmarks'
+  const res = await fetch(`${endpoint}${buildQuery(filters)}`)
   const json = await res.json()
   if (!res.ok) throw new Error(json.error?.message ?? 'Failed to fetch bookmarks')
+  // /api/search returns { results, total, ... } — normalise to BookmarkListResponse shape
+  if (filters.query?.trim()) {
+    return { bookmarks: json.data.results, total: json.data.total, has_next: json.data.has_next }
+  }
   return json.data
 }
 
@@ -57,8 +67,9 @@ async function updateBookmark(id: string, data: Partial<BookmarkFormData>): Prom
   return json.data
 }
 
-async function deleteBookmark(id: string): Promise<void> {
-  const res = await fetch(`/api/bookmarks/${id}`, { method: 'DELETE' })
+async function deleteBookmark(id: string, hard = false): Promise<void> {
+  const url = hard ? `/api/bookmarks/${id}?hard=true` : `/api/bookmarks/${id}`
+  const res = await fetch(url, { method: 'DELETE' })
   const json = await res.json()
   if (!res.ok) throw new Error(json.error?.message ?? 'Failed to delete bookmark')
 }
@@ -112,7 +123,10 @@ export function useBookmarks(initialFilters: BookmarkFilters = {}) {
     setFiltersState(prev => ({ ...prev, page }))
   }, [])
 
-  const invalidate = () => queryClient.invalidateQueries({ queryKey: ['bookmarks'] })
+  const invalidate = () => {
+    queryClient.invalidateQueries({ queryKey: ['bookmarks'] })
+    queryClient.invalidateQueries({ queryKey: ['bookmark-counts'] })
+  }
 
   const addBookmark = useMutation({
     mutationFn: (data: BookmarkFormData) => createBookmark(data),
@@ -126,7 +140,7 @@ export function useBookmarks(initialFilters: BookmarkFilters = {}) {
   })
 
   const removeBookmark = useMutation({
-    mutationFn: (id: string) => deleteBookmark(id),
+    mutationFn: ({ id, hard }: { id: string; hard?: boolean }) => deleteBookmark(id, hard),
     onSuccess: () => invalidate(),
   })
 
@@ -151,7 +165,8 @@ export function useBookmarks(initialFilters: BookmarkFilters = {}) {
     addBookmark: (data: BookmarkFormData) => addBookmark.mutateAsync(data),
     updateBookmark: (id: string, data: Partial<BookmarkFormData>) =>
       editBookmark.mutateAsync({ id, data }),
-    deleteBookmark: (id: string) => removeBookmark.mutateAsync(id),
+    deleteBookmark: (id: string) => removeBookmark.mutateAsync({ id }),
+    permanentDelete: (id: string) => removeBookmark.mutateAsync({ id, hard: true }),
     bulkAction: (ids: string[], action: BulkActionType) =>
       bulkMutation.mutateAsync({ ids, action }),
     isAdding: addBookmark.isPending,

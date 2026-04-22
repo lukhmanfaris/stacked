@@ -16,13 +16,15 @@ export type Database = {
     Tables: {
       bookmarks: {
         Row: {
-          category_id: string
+          category_id: string | null
           created_at: string
+          deleted_at: string | null
           description: string | null
           domain: string
           favicon_url: string | null
           id: string
           is_archived: boolean
+          is_favorite: boolean
           is_pinned: boolean
           link_status: Database["public"]["Enums"]["link_status"]
           og_image_url: string | null
@@ -35,13 +37,15 @@ export type Database = {
           user_id: string
         }
         Insert: {
-          category_id: string
+          category_id?: string | null
           created_at?: string
+          deleted_at?: string | null
           description?: string | null
           domain: string
           favicon_url?: string | null
           id?: string
           is_archived?: boolean
+          is_favorite?: boolean
           is_pinned?: boolean
           link_status?: Database["public"]["Enums"]["link_status"]
           og_image_url?: string | null
@@ -54,13 +58,15 @@ export type Database = {
           user_id: string
         }
         Update: {
-          category_id?: string
+          category_id?: string | null
           created_at?: string
+          deleted_at?: string | null
           description?: string | null
           domain?: string
           favicon_url?: string | null
           id?: string
           is_archived?: boolean
+          is_favorite?: boolean
           is_pinned?: boolean
           link_status?: Database["public"]["Enums"]["link_status"]
           og_image_url?: string | null
@@ -204,6 +210,7 @@ export type Database = {
           email_verified: boolean
           id: string
           last_login_at: string | null
+          marketing_consent: boolean
           onboarding_step: string
           preferences: Json
           tier: string
@@ -219,6 +226,7 @@ export type Database = {
           email_verified?: boolean
           id: string
           last_login_at?: string | null
+          marketing_consent?: boolean
           onboarding_step?: string
           preferences?: Json
           tier?: string
@@ -234,6 +242,7 @@ export type Database = {
           email_verified?: boolean
           id?: string
           last_login_at?: string | null
+          marketing_consent?: boolean
           onboarding_step?: string
           preferences?: Json
           tier?: string
@@ -242,11 +251,78 @@ export type Database = {
         }
         Relationships: []
       }
+      shared_links: {
+        Row: {
+          category_ids: string[]
+          created_at: string
+          description: string | null
+          id: string
+          is_active: boolean
+          layout: string
+          show_descriptions: boolean
+          show_favicons: boolean
+          show_tags: boolean
+          slug: string
+          theme: string
+          title: string | null
+          updated_at: string
+          user_id: string
+          view_count: number
+        }
+        Insert: {
+          category_ids?: string[]
+          created_at?: string
+          description?: string | null
+          id?: string
+          is_active?: boolean
+          layout?: string
+          show_descriptions?: boolean
+          show_favicons?: boolean
+          show_tags?: boolean
+          slug: string
+          theme?: string
+          title?: string | null
+          updated_at?: string
+          user_id: string
+          view_count?: number
+        }
+        Update: {
+          category_ids?: string[]
+          created_at?: string
+          description?: string | null
+          id?: string
+          is_active?: boolean
+          layout?: string
+          show_descriptions?: boolean
+          show_favicons?: boolean
+          show_tags?: boolean
+          slug?: string
+          theme?: string
+          title?: string | null
+          updated_at?: string
+          user_id?: string
+          view_count?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "shared_links_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
     }
     Views: {
       [_ in never]: never
     }
     Functions: {
+      get_bookmark_counts: { Args: { p_user_id: string }; Returns: Json }
+      increment_shared_link_views: {
+        Args: { link_id: string }
+        Returns: undefined
+      }
       maybe_orphan_domain: { Args: { p_domain: string }; Returns: undefined }
     }
     Enums: {

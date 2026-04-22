@@ -24,20 +24,33 @@ export async function GET(request: Request) {
       return apiError('INVALID_FORMAT', 'format must be json, html, or csv', 400)
     }
 
-    // Fetch bookmarks (no pagination — full export)
-    let bookmarkQuery = supabase
-      .from('bookmarks')
-      .select('*')
-      .eq('user_id', user.id)
-      .eq('is_archived', false)
-      .order('created_at', { ascending: false })
+    // Fetch bookmarks in batches to avoid OOM on large datasets
+    const BATCH_SIZE = 1000
+    const allBookmarks: Bookmark[] = []
+    let offset = 0
 
-    if (categoryIds.length > 0) {
-      bookmarkQuery = bookmarkQuery.in('category_id', categoryIds)
+    while (true) {
+      let q = supabase
+        .from('bookmarks')
+        .select('*')
+        .eq('user_id', user.id)
+        .eq('is_archived', false)
+        .is('deleted_at', null)
+        .order('created_at', { ascending: false })
+        .range(offset, offset + BATCH_SIZE - 1)
+
+      if (categoryIds.length > 0) {
+        q = q.in('category_id', categoryIds)
+      }
+
+      const { data, error: bmError } = await q
+      if (bmError) throw bmError
+      if (!data || data.length === 0) break
+
+      allBookmarks.push(...(data as unknown as Bookmark[]))
+      if (data.length < BATCH_SIZE) break
+      offset += BATCH_SIZE
     }
-
-    const { data: bookmarks, error: bmError } = await bookmarkQuery
-    if (bmError) throw bmError
 
     // Fetch categories for name resolution
     const { data: categories, error: catError } = await supabase
@@ -46,7 +59,7 @@ export async function GET(request: Request) {
       .eq('user_id', user.id)
     if (catError) throw catError
 
-    const bms = (bookmarks ?? []) as unknown as Bookmark[]
+    const bms = allBookmarks
     const cats = (categories ?? []) as unknown as Category[]
 
     let body: string

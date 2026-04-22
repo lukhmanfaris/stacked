@@ -4,13 +4,10 @@ import { useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { useUser } from '@/contexts/user-context'
 
-function LoadingSkeleton() {
+function LoadingState() {
   return (
-    <div className="flex h-screen items-center justify-center bg-background">
-      <div className="flex flex-col items-center gap-3">
-        <div className="h-8 w-8 animate-spin rounded-full border-2 border-muted border-t-foreground" />
-        <p className="text-sm text-muted-foreground">Loading...</p>
-      </div>
+    <div className="flex h-screen items-center justify-center bg-[var(--nd-bg)]">
+      <p className="nd-label text-[var(--nd-text-disabled)]">[ Loading ]</p>
     </div>
   )
 }
@@ -34,8 +31,8 @@ export function AuthGuard({ children }: AuthGuardProps) {
     }
   }, [isAuthenticated, isOnboarded, isLoading, router])
 
-  if (isLoading) return <LoadingSkeleton />
-  if (!isAuthenticated || !isOnboarded) return <LoadingSkeleton />
+  if (isLoading) return <LoadingState />
+  if (!isAuthenticated || !isOnboarded) return <LoadingState />
 
   return <>{children}</>
 }

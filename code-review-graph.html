@@ -1,0 +1,1033 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Stacked — Code Review Graph</title>
+  <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+  <style>
+    :root {
+      --bg: #0d0d0d;
+      --surface: #161616;
+      --border: #2a2a2a;
+      --text: #e8e8e8;
+      --muted: #888;
+      --accent: #ffffff;
+      --green: #4ade80;
+      --yellow: #fbbf24;
+      --red: #f87171;
+      --blue: #60a5fa;
+      --purple: #c084fc;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: 'Space Grotesk', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+    }
+    header {
+      border-bottom: 1px solid var(--border);
+      padding: 24px 40px;
+      display: flex;
+      align-items: center;
+      gap: 16px;
+    }
+    header h1 {
+      font-size: 18px;
+      font-weight: 600;
+      letter-spacing: -0.02em;
+      color: var(--accent);
+    }
+    header span {
+      font-size: 12px;
+      color: var(--muted);
+      font-family: 'Space Mono', monospace;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      padding: 3px 8px;
+      border-radius: 4px;
+    }
+    .nav {
+      display: flex;
+      gap: 0;
+      padding: 0 40px;
+      border-bottom: 1px solid var(--border);
+      overflow-x: auto;
+    }
+    .nav button {
+      background: none;
+      border: none;
+      color: var(--muted);
+      font-size: 13px;
+      padding: 14px 20px;
+      cursor: pointer;
+      white-space: nowrap;
+      border-bottom: 2px solid transparent;
+      margin-bottom: -1px;
+      transition: all 0.15s;
+      font-family: inherit;
+    }
+    .nav button:hover { color: var(--text); }
+    .nav button.active { color: var(--accent); border-bottom-color: var(--accent); }
+    .content {
+      padding: 40px;
+      max-width: 1400px;
+    }
+    .tab-content { display: none; }
+    .tab-content.active { display: block; }
+    .section-title {
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      color: var(--muted);
+      margin-bottom: 20px;
+    }
+    .graph-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 32px;
+      margin-bottom: 24px;
+      overflow-x: auto;
+    }
+    .graph-card h2 {
+      font-size: 14px;
+      font-weight: 600;
+      color: var(--accent);
+      margin-bottom: 8px;
+      letter-spacing: -0.01em;
+    }
+    .graph-card p {
+      font-size: 12px;
+      color: var(--muted);
+      margin-bottom: 24px;
+      line-height: 1.6;
+    }
+    .mermaid { display: flex; justify-content: center; }
+    .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; }
+    @media (max-width: 900px) { .grid-2 { grid-template-columns: 1fr; } }
+
+    /* Review findings */
+    .findings-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 16px; }
+    .finding {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 20px;
+    }
+    .finding-header { display: flex; align-items: flex-start; gap: 12px; margin-bottom: 12px; }
+    .severity {
+      font-size: 10px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      padding: 3px 8px;
+      border-radius: 4px;
+      white-space: nowrap;
+      flex-shrink: 0;
+    }
+    .sev-critical { background: rgba(248,113,113,0.15); color: var(--red); border: 1px solid rgba(248,113,113,0.3); }
+    .sev-warn { background: rgba(251,191,36,0.1); color: var(--yellow); border: 1px solid rgba(251,191,36,0.25); }
+    .sev-info { background: rgba(96,165,250,0.1); color: var(--blue); border: 1px solid rgba(96,165,250,0.25); }
+    .sev-good { background: rgba(74,222,128,0.1); color: var(--green); border: 1px solid rgba(74,222,128,0.25); }
+    .finding h3 { font-size: 13px; font-weight: 600; color: var(--text); line-height: 1.4; }
+    .finding p { font-size: 12px; color: var(--muted); line-height: 1.6; margin-bottom: 10px; }
+    .finding code {
+      font-family: 'Space Mono', monospace;
+      font-size: 11px;
+      background: rgba(255,255,255,0.05);
+      border: 1px solid var(--border);
+      padding: 8px 12px;
+      border-radius: 4px;
+      display: block;
+      color: var(--text);
+      line-height: 1.6;
+    }
+    .finding .location {
+      font-size: 11px;
+      color: var(--muted);
+      font-family: 'Space Mono', monospace;
+      margin-top: 10px;
+      opacity: 0.7;
+    }
+
+    /* Stats bar */
+    .stats-bar {
+      display: flex;
+      gap: 24px;
+      padding: 20px 40px;
+      border-bottom: 1px solid var(--border);
+      flex-wrap: wrap;
+    }
+    .stat { display: flex; align-items: center; gap: 8px; }
+    .stat-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+    .stat-label { font-size: 12px; color: var(--muted); }
+    .stat-value { font-size: 12px; font-weight: 600; color: var(--text); }
+
+    /* Module table */
+    table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    th { text-align: left; font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); padding: 10px 16px; border-bottom: 1px solid var(--border); font-weight: 500; }
+    td { padding: 12px 16px; border-bottom: 1px solid rgba(255,255,255,0.04); vertical-align: top; }
+    tr:last-child td { border-bottom: none; }
+    td:first-child { font-family: 'Space Mono', monospace; font-size: 12px; color: var(--blue); }
+    .tag-pill {
+      display: inline-block;
+      font-size: 10px;
+      padding: 2px 7px;
+      border-radius: 3px;
+      background: rgba(255,255,255,0.06);
+      border: 1px solid var(--border);
+      color: var(--muted);
+      margin: 2px;
+      font-family: 'Space Mono', monospace;
+    }
+  </style>
+</head>
+<body>
+
+<header>
+  <h1>Stacked — Code Review Graph</h1>
+  <span>Next.js 16 · React 19 · Supabase · TanStack Query</span>
+  <span style="margin-left:auto">April 2026</span>
+</header>
+
+<div class="stats-bar">
+  <div class="stat">
+    <div class="stat-dot" style="background:var(--blue)"></div>
+    <span class="stat-label">Modules</span>
+    <span class="stat-value">9</span>
+  </div>
+  <div class="stat">
+    <div class="stat-dot" style="background:var(--purple)"></div>
+    <span class="stat-label">API Routes</span>
+    <span class="stat-value">18</span>
+  </div>
+  <div class="stat">
+    <div class="stat-dot" style="background:var(--green)"></div>
+    <span class="stat-label">Components</span>
+    <span class="stat-value">32</span>
+  </div>
+  <div class="stat">
+    <div class="stat-dot" style="background:var(--yellow)"></div>
+    <span class="stat-label">Hooks</span>
+    <span class="stat-value">10</span>
+  </div>
+  <div class="stat">
+    <div class="stat-dot" style="background:var(--red)"></div>
+    <span class="stat-label">Critical Findings</span>
+    <span class="stat-value">2</span>
+  </div>
+  <div class="stat">
+    <div class="stat-dot" style="background:var(--yellow)"></div>
+    <span class="stat-label">Warnings</span>
+    <span class="stat-value">6</span>
+  </div>
+  <div class="stat">
+    <div class="stat-dot" style="background:var(--green)"></div>
+    <span class="stat-label">Good Patterns</span>
+    <span class="stat-value">8</span>
+  </div>
+</div>
+
+<nav class="nav">
+  <button class="active" onclick="show('architecture')">Architecture</button>
+  <button onclick="show('dataflow')">Data Flow</button>
+  <button onclick="show('api')">API Routes</button>
+  <button onclick="show('components')">Components</button>
+  <button onclick="show('auth')">Auth Flow</button>
+  <button onclick="show('findings')">Review Findings</button>
+  <button onclick="show('modules')">Module Index</button>
+</nav>
+
+<div class="content">
+
+  <!-- ARCHITECTURE -->
+  <div id="architecture" class="tab-content active">
+    <p class="section-title">System Architecture</p>
+    <div class="graph-card">
+      <h2>Full Stack Overview</h2>
+      <p>Next.js App Router with route groups, Supabase backend, React Query for server state, Zod for validation at every boundary.</p>
+      <div class="mermaid">
+graph TB
+    subgraph CLIENT["Client Layer"]
+        UI["UI Components<br/>shadcn/ui + framer-motion"]
+        CTX["Contexts<br/>UserContext · DashboardContext · QueryClient"]
+        HOOKS["Hooks<br/>useBookmarks · useCategories · useSearch<br/>useSharedLinks · useAuth · useBookmarkCounts"]
+    end
+
+    subgraph APP_ROUTER["Next.js App Router"]
+        AUTH_GROUP["(auth) group<br/>login · signup · verify · onboarding"]
+        DASH_GROUP["(dashboard) group<br/>dashboard · settings · search"]
+        PUBLIC["app/p/[slug]<br/>public shared link pages"]
+        API["API Routes<br/>18 endpoints"]
+    end
+
+    subgraph SERVICES["Service Layer (lib/)"]
+        VALIDATORS["validators.ts<br/>Zod schemas"]
+        ERRORS["errors.ts<br/>AppError hierarchy"]
+        TIER["tier.ts<br/>limit checks"]
+        API_RESP["api-response.ts<br/>standard responses"]
+        EXPORT["export/ · import/<br/>CSV · HTML · JSON"]
+        STORAGE["storage/<br/>Supabase Storage"]
+    end
+
+    subgraph SUPABASE["Supabase"]
+        DB["PostgreSQL<br/>bookmarks · categories · profiles<br/>shared_links · domains"]
+        AUTH_SB["Auth<br/>email · OAuth"]
+        STORAGE_SB["Storage<br/>avatars · domain assets"]
+        EDGE["Edge Functions<br/>fetch-metadata · maybe_orphan_domain"]
+    end
+
+    UI --> CTX
+    CTX --> HOOKS
+    HOOKS -->|"fetch/mutate"| API
+    AUTH_GROUP --> AUTH_SB
+    DASH_GROUP --> API
+    PUBLIC --> DB
+    API --> VALIDATORS
+    API --> ERRORS
+    API --> TIER
+    API --> API_RESP
+    API --> SUPABASE
+    SERVICES --> SUPABASE
+
+    style CLIENT fill:#1a1a2e,stroke:#3a3a5e
+    style APP_ROUTER fill:#1a2e1a,stroke:#3a5e3a
+    style SERVICES fill:#2e1a1a,stroke:#5e3a3a
+    style SUPABASE fill:#1a1a1a,stroke:#444
+      </div>
+    </div>
+
+    <div class="grid-2">
+      <div class="graph-card">
+        <h2>State Management</h2>
+        <p>Three layers: server state (React Query), auth state (UserContext), UI state (DashboardContext + localStorage).</p>
+        <div class="mermaid">
+graph TD
+    RQ["TanStack React Query<br/><small>bookmarks, categories,<br/>search, counts</small>"]
+    UC["UserContext<br/><small>user, profile, loading,<br/>isAuthenticated</small>"]
+    DC["DashboardContext<br/><small>viewMode, sidebar,<br/>form modal</small>"]
+    LS["localStorage<br/><small>view mode, sidebar width</small>"]
+    SB_AUTH["Supabase Auth<br/><small>session, onAuthStateChange</small>"]
+
+    RQ -->|"staleTime 30s"| API_LAYER["API Layer"]
+    UC --> SB_AUTH
+    DC --> LS
+    UC -->|"profile fetch"| API_LAYER
+
+    style RQ fill:#1e3a1e,stroke:#4a7a4a
+    style UC fill:#1e1e3a,stroke:#4a4a7a
+    style DC fill:#3a2e1e,stroke:#7a5e3a
+        </div>
+      </div>
+
+      <div class="graph-card">
+        <h2>Tier System</h2>
+        <p>Free vs Pro limits enforced at API level before mutations, using checkTierLimit() with Supabase count queries.</p>
+        <div class="mermaid">
+graph TD
+    REQ["POST / mutation request"]
+    CTL["checkTierLimit(userId, resource)"]
+    PROF["Fetch profile → get tier"]
+    COUNT["Count existing resources"]
+    CHECK{Limit exceeded?}
+    ERR["TierLimitError 403<br/>limit · current · resource"]
+    OK["Proceed with mutation"]
+
+    REQ --> CTL
+    CTL --> PROF
+    PROF --> COUNT
+    COUNT --> CHECK
+    CHECK -->|yes| ERR
+    CHECK -->|no| OK
+
+    style ERR fill:#3a1a1a,stroke:#7a3a3a
+    style OK fill:#1a3a1a,stroke:#3a7a3a
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- DATA FLOW -->
+  <div id="dataflow" class="tab-content">
+    <p class="section-title">Data Flow</p>
+    <div class="graph-card">
+      <h2>Bookmark Lifecycle</h2>
+      <p>Full create → store → display → export flow with metadata enrichment via edge function.</p>
+      <div class="mermaid">
+sequenceDiagram
+    participant U as User
+    participant C as BookmarkForm
+    participant H as useBookmarks
+    participant API as POST /api/bookmarks
+    participant V as validators.ts
+    participant T as tier.ts
+    participant EF as Edge: fetch-metadata
+    participant DB as Supabase DB
+
+    U->>C: submit URL + optional fields
+    C->>H: createBookmark(data)
+    H->>API: POST /api/bookmarks
+    API->>V: bookmarkSchema.parse(body)
+    V-->>API: validated data or ValidationError 422
+    API->>T: checkTierLimit(userId, 'bookmarks')
+    T-->>API: ok or TierLimitError 403
+    API->>DB: check duplicate URL
+    DB-->>API: existing bookmark?
+    API->>EF: invoke fetch-metadata(url)
+    EF-->>API: title, description, favicon, og_image
+    API->>DB: INSERT bookmark
+    DB-->>API: created bookmark
+    API-->>H: { data: bookmark, duplicate_warning? }
+    H->>H: invalidate ['bookmarks'] + ['bookmark-counts']
+    H-->>C: bookmark + toast notification
+      </div>
+    </div>
+
+    <div class="graph-card">
+      <h2>Search & Filter Flow</h2>
+      <p>Filters sync to URL params. React Query re-fetches on filter change. Full-text search uses PostgreSQL search_vec column.</p>
+      <div class="mermaid">
+sequenceDiagram
+    participant U as User
+    participant D as DashboardPage
+    participant H as useBookmarks
+    participant API as GET /api/bookmarks
+    participant DB as Supabase DB
+
+    U->>D: apply filter (category/tag/status/search)
+    D->>D: sync filters → URL params
+    D->>H: setFilters(newFilters)
+    H->>H: React Query refetch (30s stale)
+    H->>API: GET /api/bookmarks?...filters
+    API->>DB: query with RLS + filters
+    note over DB: pinned=true always first<br/>is_trashed excluded by default<br/>is_archived excluded by default
+    DB-->>API: rows + count
+    API-->>H: BookmarkListResponse
+    H-->>D: bookmarks + pagination
+    D-->>U: render grid/list/stack
+      </div>
+    </div>
+
+    <div class="graph-card">
+      <h2>Export Flow</h2>
+      <p>Exports bypass pagination — full dataset. Three formats. Filename stamped with ISO date.</p>
+      <div class="mermaid">
+flowchart LR
+    EXPORT_BTN["Export Button"]
+    OPTS["ExportOptions<br/>format + category filter"]
+    API_EX["GET /api/export"]
+    DB_EX["Supabase<br/>SELECT * (no pagination)<br/>exclude archived + deleted"]
+
+    subgraph FORMATTERS["lib/export/"]
+        CSV["to-csv.ts"]
+        HTML["to-html.ts"]
+        JSON["to-json.ts"]
+    end
+
+    DOWNLOAD["File Download<br/>Content-Disposition: attachment<br/>filename: bookmarks-{ISO}.{ext}"]
+
+    EXPORT_BTN --> OPTS
+    OPTS -->|"format=csv|html|json"| API_EX
+    API_EX --> DB_EX
+    DB_EX --> FORMATTERS
+    FORMATTERS --> DOWNLOAD
+      </div>
+    </div>
+  </div>
+
+  <!-- API ROUTES -->
+  <div id="api" class="tab-content">
+    <p class="section-title">API Route Map</p>
+    <div class="graph-card">
+      <h2>All 18 Endpoints</h2>
+      <p>RESTful structure. All routes use apiSuccess() / apiError() / handleApiError(). Auth via Supabase SSR cookie.</p>
+      <div class="mermaid">
+graph LR
+    subgraph BOOKMARKS["Bookmarks"]
+        B1["GET /api/bookmarks<br/>list + filter + paginate"]
+        B2["POST /api/bookmarks<br/>create + metadata fetch"]
+        B3["GET /api/bookmarks/:id<br/>single bookmark"]
+        B4["PATCH /api/bookmarks/:id<br/>update fields"]
+        B5["DELETE /api/bookmarks/:id<br/>soft or hard delete"]
+        B6["POST /api/bookmarks/bulk<br/>bulk actions (200 max)"]
+        B7["GET /api/bookmarks/counts<br/>stats by view/category/tag"]
+    end
+
+    subgraph CATEGORIES["Categories"]
+        C1["GET /api/categories"]
+        C2["POST /api/categories"]
+        C3["PATCH /api/categories/:id"]
+        C4["DELETE /api/categories/:id"]
+        C5["PATCH /api/categories/reorder"]
+    end
+
+    subgraph SHARED["Shared Links"]
+        S1["GET /api/shared-links"]
+        S2["POST /api/shared-links"]
+        S3["PATCH /api/shared-links/:id"]
+        S4["DELETE /api/shared-links/:id"]
+    end
+
+    subgraph OTHER["Other"]
+        O1["GET /api/search<br/>full-text on search_vec"]
+        O2["GET /api/export<br/>CSV · HTML · JSON"]
+        O3["POST /api/import<br/>parse + batch insert"]
+        O4["POST /api/import/preview<br/>parse only, no write"]
+        O5["GET /api/metadata<br/>fetch OG data"]
+        O6["GET /api/auth/me"]
+        O7["PATCH /api/profile"]
+        O8["PATCH /api/preferences"]
+    end
+
+    style BOOKMARKS fill:#1a2e1a,stroke:#3a5e3a
+    style CATEGORIES fill:#1a1a2e,stroke:#3a3a5e
+    style SHARED fill:#2e1a2e,stroke:#5e3a5e
+    style OTHER fill:#2e2a1a,stroke:#5e5a3a
+      </div>
+    </div>
+
+    <div class="graph-card">
+      <h2>Request → Response Pattern</h2>
+      <p>Consistent pattern across all routes. Error hierarchy maps directly to HTTP status codes.</p>
+      <div class="mermaid">
+flowchart TD
+    REQ["Incoming Request"]
+    AUTH_CHECK["createServerClient()<br/>verify session"]
+    PARSE["schema.parse(body/params)<br/>Zod validation"]
+    BUSI["Business Logic<br/>DB query / mutation"]
+    RESP["apiSuccess(data, status)"]
+
+    UNAUTH["UnauthorizedError 401"]
+    VAL_ERR["ValidationError 422<br/>field-level details"]
+    TIER_ERR["TierLimitError 403<br/>limit · current · resource"]
+    NOT_FOUND["NotFoundError 404"]
+    CONFLICT["ConflictError 409"]
+    SERVER_ERR["500 Internal<br/>logged server-side"]
+
+    REQ --> AUTH_CHECK
+    AUTH_CHECK -->|"no session"| UNAUTH
+    AUTH_CHECK -->|"ok"| PARSE
+    PARSE -->|"invalid"| VAL_ERR
+    PARSE -->|"ok"| BUSI
+    BUSI -->|"limit hit"| TIER_ERR
+    BUSI -->|"not found"| NOT_FOUND
+    BUSI -->|"duplicate"| CONFLICT
+    BUSI -->|"unexpected"| SERVER_ERR
+    BUSI -->|"ok"| RESP
+
+    style UNAUTH fill:#3a1a1a,stroke:#7a3a3a
+    style VAL_ERR fill:#3a2a1a,stroke:#7a5a3a
+    style TIER_ERR fill:#3a1a1a,stroke:#7a3a3a
+    style NOT_FOUND fill:#3a1a1a,stroke:#7a3a3a
+    style CONFLICT fill:#3a1a1a,stroke:#7a3a3a
+    style SERVER_ERR fill:#3a1a1a,stroke:#7a3a3a
+    style RESP fill:#1a3a1a,stroke:#3a7a3a
+      </div>
+    </div>
+  </div>
+
+  <!-- COMPONENTS -->
+  <div id="components" class="tab-content">
+    <p class="section-title">Component Hierarchy</p>
+    <div class="graph-card">
+      <h2>Dashboard Component Tree</h2>
+      <p>DashboardContext wraps layout. AuthGuard gates access. Sidebar + TopBar are layout-level. Content area swaps view mode.</p>
+      <div class="mermaid">
+graph TD
+    ROOT["app/layout.tsx<br/>UserProvider · QueryClientProvider · Toaster"]
+    DASH_LAYOUT["(dashboard)/layout.tsx<br/>DashboardProvider · AuthGuard"]
+    DASH_PAGE["dashboard/page.tsx<br/>filter sync · bulk select · view toggle"]
+
+    subgraph LAYOUT_COMPS["Layout"]
+        SIDEBAR["Sidebar<br/>system views · categories · tags<br/>resize (220-340px) → localStorage"]
+        TOPBAR["TopBar<br/>search · user menu · theme"]
+        MOBNAV["MobileNav<br/>drawer overlay"]
+    end
+
+    subgraph VIEWS["Bookmark Views"]
+        STACK["BookmarkStack<br/>grouped by category"]
+        GRID["BookmarkGrid<br/>masonry-style cards"]
+        LIST["BookmarkListItem<br/>compact rows"]
+    end
+
+    subgraph CARD["BookmarkCard"]
+        OG_IMG["OG image hero<br/>fallback to favicon"]
+        ACTIONS["PinBtn · FavBtn · MoreMenu"]
+        TAGS["Tag pills (max 4 + N)"]
+        STATUS["Link status dot"]
+        CHECKBOX["Selection checkbox"]
+    end
+
+    ROOT --> DASH_LAYOUT
+    DASH_LAYOUT --> LAYOUT_COMPS
+    DASH_LAYOUT --> DASH_PAGE
+    DASH_PAGE --> VIEWS
+    GRID --> CARD
+    STACK --> CARD
+      </div>
+    </div>
+
+    <div class="graph-card">
+      <h2>Shared Link Public Page Tree</h2>
+      <p>app/p/[slug] renders portable components. No auth required. OG image generated at build/request time.</p>
+      <div class="mermaid">
+graph TD
+    SLUG["app/p/[slug]/page.tsx"]
+    OG_GEN["opengraph-image.tsx<br/>dynamic OG metadata"]
+
+    subgraph PORTABLE["components/portable/"]
+        P_HEADER["PortableHeader<br/>title · description · view count"]
+        P_THEME["PortableTheme<br/>light/dark CSS vars"]
+        P_GRID["PortableGrid<br/>layout: minimal/cards/masonry/terminal"]
+    end
+
+    SLUG --> PORTABLE
+    SLUG --> OG_GEN
+      </div>
+    </div>
+
+    <div class="grid-2">
+      <div class="graph-card">
+        <h2>Hook → API Connections</h2>
+        <p>Each hook owns one API domain. React Query cache keys match resource names.</p>
+        <div class="mermaid">
+graph LR
+    H_BM["useBookmarks"] -->|"['bookmarks']"| API_BM["/api/bookmarks"]
+    H_CAT["useCategories"] -->|"['categories']"| API_CAT["/api/categories"]
+    H_SRCH["useSearch"] -->|"['search']"| API_SRCH["/api/search"]
+    H_SL["useSharedLinks"] -->|"['shared-links']"| API_SL["/api/shared-links"]
+    H_CNT["useBookmarkCounts"] -->|"['bookmark-counts']"| API_CNT["/api/bookmarks/counts"]
+    H_PROF["useProfile"] -->|"['profile']"| API_PROF["/api/profile"]
+        </div>
+      </div>
+
+      <div class="graph-card">
+        <h2>Cache Invalidation Map</h2>
+        <p>Mutations invalidate related caches. Bookmark mutations always invalidate counts.</p>
+        <div class="mermaid">
+graph TD
+    MUT_BM["Bookmark mutation<br/>(create/update/delete/bulk)"]
+    MUT_CAT["Category mutation<br/>(create/update/delete)"]
+    MUT_SL["SharedLink mutation"]
+
+    INV_BM["invalidate ['bookmarks']"]
+    INV_CNT["invalidate ['bookmark-counts']"]
+    INV_CAT["invalidate ['categories']"]
+    INV_SL["invalidate ['shared-links']"]
+
+    MUT_BM --> INV_BM
+    MUT_BM --> INV_CNT
+    MUT_CAT --> INV_CAT
+    MUT_CAT --> INV_CNT
+    MUT_SL --> INV_SL
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- AUTH FLOW -->
+  <div id="auth" class="tab-content">
+    <p class="section-title">Authentication & Authorization</p>
+    <div class="graph-card">
+      <h2>Sign Up / Onboarding Flow</h2>
+      <div class="mermaid">
+sequenceDiagram
+    participant U as User
+    participant SU as signup/page.tsx
+    participant AUTH as Supabase Auth
+    participant VE as verify-email/page.tsx
+    participant CB as auth/callback/route.ts
+    participant ON as onboarding/page.tsx
+    participant DB as profiles table
+
+    U->>SU: email + password
+    SU->>AUTH: signUp()
+    AUTH-->>U: confirmation email
+    U->>VE: click email link
+    VE->>CB: OAuth code exchange
+    CB->>AUTH: exchangeCodeForSession()
+    CB-->>ON: redirect (profile not complete)
+    ON->>DB: check onboarding_step
+    note over ON,DB: steps: username → categories → first_bookmark → done
+    ON->>DB: upsert profile on each step
+    DB-->>ON: step complete
+    ON-->>U: redirect to /dashboard
+      </div>
+    </div>
+
+    <div class="graph-card">
+      <h2>UserContext Auth State Machine</h2>
+      <p>Two-phase init: quick getSession() then onAuthStateChange(). Web Locks API prevents race conditions.</p>
+      <div class="mermaid">
+stateDiagram-v2
+    [*] --> Loading: mount
+    Loading --> Unauthenticated: getSession() null
+    Loading --> Authenticated: getSession() ok → fetch profile
+    Unauthenticated --> Authenticated: SIGNED_IN event
+    Authenticated --> Unauthenticated: SIGNED_OUT event
+    Authenticated --> Authenticated: TOKEN_REFRESHED → refetch profile
+
+    note right of Authenticated
+      profile loaded from /api/auth/me
+      Web Locks prevents parallel fetches
+    end note
+      </div>
+    </div>
+
+    <div class="graph-card">
+      <h2>Route Protection</h2>
+      <div class="mermaid">
+flowchart TD
+    REQ_ROUTE["Route Request"]
+
+    subgraph MW["middleware.ts"]
+        SB_MW["Supabase SSR<br/>refresh session cookie"]
+    end
+
+    subgraph CLIENT["AuthGuard (client)"]
+        LOADING_STATE["loading? → spinner"]
+        AUTH_CHECK2["isAuthenticated?"]
+        ONBOARD_CHECK["isOnboarded?"]
+        CONTENT["Render children"]
+    end
+
+    REQ_ROUTE --> MW
+    MW --> LOADING_STATE
+    LOADING_STATE -->|"done"| AUTH_CHECK2
+    AUTH_CHECK2 -->|"no"| LOGIN["redirect /login"]
+    AUTH_CHECK2 -->|"yes"| ONBOARD_CHECK
+    ONBOARD_CHECK -->|"no"| ONBOARD["redirect /onboarding"]
+    ONBOARD_CHECK -->|"yes"| CONTENT
+      </div>
+    </div>
+  </div>
+
+  <!-- REVIEW FINDINGS -->
+  <div id="findings" class="tab-content">
+    <p class="section-title">Code Review Findings</p>
+
+    <div class="findings-grid">
+
+      <div class="finding">
+        <div class="finding-header">
+          <span class="severity sev-critical">Critical</span>
+          <h3>Export endpoint — no pagination / memory risk</h3>
+        </div>
+        <p>Export fetches ALL bookmarks in one query. Pro users with 10K bookmarks could hit memory limits or timeout on serverless.</p>
+        <code>// api/export/route.ts
+const { data } = await supabase
+  .from('bookmarks')
+  .select('*')  // no .range() — unbounded</code>
+        <p class="location">src/app/api/export/route.ts</p>
+      </div>
+
+      <div class="finding">
+        <div class="finding-header">
+          <span class="severity sev-critical">Critical</span>
+          <h3>Search endpoint — no RLS ownership filter</h3>
+        </div>
+        <p>Full-text search on search_vec must explicitly filter by user_id, or rely solely on RLS. Verify RLS policy covers textSearch path — supabase's <code>textSearch()</code> can bypass policies if misconfigured.</p>
+        <code>// api/search/route.ts — confirm RLS active
+// or add explicit: .eq('user_id', user.id)</code>
+        <p class="location">src/app/api/search/route.ts</p>
+      </div>
+
+      <div class="finding">
+        <div class="finding-header">
+          <span class="severity sev-warn">Warning</span>
+          <h3>Bulk action — 200 ID limit not server-validated</h3>
+        </div>
+        <p>Client sends up to 200 IDs. Zod schema should validate <code>ids.max(200)</code>. Without it, attacker can send 10K IDs in one request.</p>
+        <code>// validators.ts — add:
+ids: z.array(z.string().uuid()).min(1).max(200)</code>
+        <p class="location">src/app/api/bookmarks/bulk/route.ts</p>
+      </div>
+
+      <div class="finding">
+        <div class="finding-header">
+          <span class="severity sev-warn">Warning</span>
+          <h3>SSR localStorage access — sidebar + view mode</h3>
+        </div>
+        <p>DashboardContext reads localStorage synchronously on init. Will throw in SSR/Edge environments if not guarded.</p>
+        <code>// dashboard-context.tsx
+// Needs: typeof window !== 'undefined' guard
+// or initialise with null → read in useEffect</code>
+        <p class="location">src/contexts/dashboard-context.tsx</p>
+      </div>
+
+      <div class="finding">
+        <div class="finding-header">
+          <span class="severity sev-warn">Warning</span>
+          <h3>Metadata edge function — no timeout fallback UI</h3>
+        </div>
+        <p>8s timeout defined in constants. If edge function fails/times out, bookmark is still created with empty metadata. User sees no indication it failed silently.</p>
+        <code>// METADATA_FETCH_TIMEOUT = 8000
+// Bookmark created regardless — silent degradation</code>
+        <p class="location">src/lib/constants.ts · src/app/api/bookmarks/route.ts</p>
+      </div>
+
+      <div class="finding">
+        <div class="finding-header">
+          <span class="severity sev-warn">Warning</span>
+          <h3>Shared link slug — 5 retries not enough at scale</h3>
+        </div>
+        <p>Auto slug generation tries up to 5 suffixed variants. With many public users, collisions become likely. Should fallback to UUID segment after exhaustion.</p>
+        <code>// shared-links/route.ts
+// After 5 attempts → should use nanoid fallback
+// Currently throws ConflictError</code>
+        <p class="location">src/app/api/shared-links/route.ts</p>
+      </div>
+
+      <div class="finding">
+        <div class="finding-header">
+          <span class="severity sev-warn">Warning</span>
+          <h3>useBookmarks — filter state reset on remount</h3>
+        </div>
+        <p>Filter state lives in hook memory. On component remount (route change → back), filters reset to DEFAULT_FILTERS even though URL params may have the state. URL params should be source of truth.</p>
+        <code>// use-bookmarks.ts
+const [filters, setFilters] = useState(DEFAULT_FILTERS)
+// Should initialise from URL params</code>
+        <p class="location">src/hooks/use-bookmarks.ts</p>
+      </div>
+
+      <div class="finding">
+        <div class="finding-header">
+          <span class="severity sev-warn">Warning</span>
+          <h3>Hard delete — domain orphan cleanup is best-effort</h3>
+        </div>
+        <p><code>maybe_orphan_domain</code> RPC called after delete. If it fails, orphan domains accumulate in storage. No retry or error surfacing.</p>
+        <code>// api/bookmarks/[id]/route.ts DELETE
+await supabase.rpc('maybe_orphan_domain', {...})
+// failure here = silent orphan leak</code>
+        <p class="location">src/app/api/bookmarks/[id]/route.ts</p>
+      </div>
+
+      <!-- GOOD PATTERNS -->
+      <div class="finding">
+        <div class="finding-header">
+          <span class="severity sev-good">Good</span>
+          <h3>Consistent error hierarchy</h3>
+        </div>
+        <p>AppError → ValidationError, NotFoundError, TierLimitError etc. All map to specific HTTP status codes. handleApiError() centralises all error handling — no scattered try/catch patterns.</p>
+        <p class="location">src/lib/errors.ts · src/lib/api-response.ts</p>
+      </div>
+
+      <div class="finding">
+        <div class="finding-header">
+          <span class="severity sev-good">Good</span>
+          <h3>Zod validation at every API boundary</h3>
+        </div>
+        <p>All POST/PATCH routes validate with Zod before any DB call. Type safety flows from schema to TypeScript types via z.infer. Field-level errors returned in ValidationError response.</p>
+        <p class="location">src/lib/validators.ts</p>
+      </div>
+
+      <div class="finding">
+        <div class="finding-header">
+          <span class="severity sev-good">Good</span>
+          <h3>Tier limits enforced before mutations</h3>
+        </div>
+        <p>checkTierLimit() called before INSERT on bookmarks, categories, shared_links. Returns resource + limit + current count in error — good for client-side messaging.</p>
+        <p class="location">src/lib/tier.ts</p>
+      </div>
+
+      <div class="finding">
+        <div class="finding-header">
+          <span class="severity sev-good">Good</span>
+          <h3>Soft delete with trash state</h3>
+        </div>
+        <p>Bookmarks are soft-deleted to trash (is_trashed), then optionally hard-deleted. Prevents accidental data loss. Trash view lets users recover before permanent deletion.</p>
+        <p class="location">src/app/api/bookmarks/[id]/route.ts</p>
+      </div>
+
+      <div class="finding">
+        <div class="finding-header">
+          <span class="severity sev-good">Good</span>
+          <h3>Duplicate URL detection with warning (non-blocking)</h3>
+        </div>
+        <p>On bookmark create, checks for existing URL. Returns duplicate_warning flag + existing_id without blocking creation. User can choose to proceed or navigate to existing.</p>
+        <p class="location">src/app/api/bookmarks/route.ts</p>
+      </div>
+
+      <div class="finding">
+        <div class="finding-header">
+          <span class="severity sev-good">Good</span>
+          <h3>React Query cache invalidation strategy</h3>
+        </div>
+        <p>Bookmark mutations invalidate both ['bookmarks'] and ['bookmark-counts'] in one shot. No stale count bugs. Category mutations also invalidate counts.</p>
+        <p class="location">src/hooks/use-bookmarks.ts</p>
+      </div>
+
+      <div class="finding">
+        <div class="finding-header">
+          <span class="severity sev-good">Good</span>
+          <h3>Web Locks API in UserContext</h3>
+        </div>
+        <p>Uses navigator.locks.request to prevent concurrent profile fetches during rapid auth state changes. Prevents race conditions with a 'cancelled' flag pattern.</p>
+        <p class="location">src/contexts/user-context.tsx</p>
+      </div>
+
+      <div class="finding">
+        <div class="finding-header">
+          <span class="severity sev-good">Good</span>
+          <h3>Pinned bookmarks always sort first</h3>
+        </div>
+        <p>Both GET /api/bookmarks and GET /api/search apply .order('is_pinned', { ascending: false }) before secondary sort. Consistent across all views.</p>
+        <p class="location">src/app/api/bookmarks/route.ts · src/app/api/search/route.ts</p>
+      </div>
+
+      <div class="finding">
+        <div class="finding-header">
+          <span class="severity sev-info">Info</span>
+          <h3>No rate limiting on API routes</h3>
+        </div>
+        <p>RateLimitError class exists in errors.ts but no middleware applies it. Consider adding rate limiting on /api/metadata and /api/import to prevent abuse.</p>
+        <p class="location">src/lib/errors.ts</p>
+      </div>
+
+      <div class="finding">
+        <div class="finding-header">
+          <span class="severity sev-info">Info</span>
+          <h3>search_vec column — no migration visible</h3>
+        </div>
+        <p>Search uses PostgreSQL textSearch on search_vec. This column requires a generated tsvector column + GIN index in migrations. Verify it's created in DB schema — not visible in migrations 006-008.</p>
+        <p class="location">supabase/migrations/ · src/app/api/search/route.ts</p>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- MODULE INDEX -->
+  <div id="modules" class="tab-content">
+    <p class="section-title">Module Index</p>
+    <div class="graph-card" style="padding:0; overflow:hidden;">
+      <table>
+        <thead>
+          <tr>
+            <th>Module / File</th>
+            <th>Purpose</th>
+            <th>Dependencies</th>
+            <th>Exposes</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>lib/validators.ts</td>
+            <td style="color:#e8e8e8;font-size:12px">Zod schemas for all API inputs</td>
+            <td><span class="tag-pill">zod</span></td>
+            <td><span class="tag-pill">bookmarkSchema</span><span class="tag-pill">categorySchema</span><span class="tag-pill">sharedLinkSchema</span><span class="tag-pill">searchParamsSchema</span></td>
+          </tr>
+          <tr>
+            <td>lib/errors.ts</td>
+            <td style="color:#e8e8e8;font-size:12px">Custom error hierarchy</td>
+            <td>none</td>
+            <td><span class="tag-pill">AppError</span><span class="tag-pill">ValidationError</span><span class="tag-pill">TierLimitError</span><span class="tag-pill">NotFoundError</span></td>
+          </tr>
+          <tr>
+            <td>lib/api-response.ts</td>
+            <td style="color:#e8e8e8;font-size:12px">Standard API response helpers</td>
+            <td><span class="tag-pill">next/server</span><span class="tag-pill">errors.ts</span></td>
+            <td><span class="tag-pill">apiSuccess()</span><span class="tag-pill">apiError()</span><span class="tag-pill">handleApiError()</span></td>
+          </tr>
+          <tr>
+            <td>lib/tier.ts</td>
+            <td style="color:#e8e8e8;font-size:12px">Tier limit enforcement</td>
+            <td><span class="tag-pill">supabase/admin</span><span class="tag-pill">constants.ts</span><span class="tag-pill">errors.ts</span></td>
+            <td><span class="tag-pill">checkTierLimit()</span></td>
+          </tr>
+          <tr>
+            <td>lib/constants.ts</td>
+            <td style="color:#e8e8e8;font-size:12px">App limits, defaults, config</td>
+            <td>none</td>
+            <td><span class="tag-pill">TIER_LIMITS</span><span class="tag-pill">TAG_LIMITS</span><span class="tag-pill">STARTER_CATEGORIES</span></td>
+          </tr>
+          <tr>
+            <td>contexts/user-context.tsx</td>
+            <td style="color:#e8e8e8;font-size:12px">Auth + profile state</td>
+            <td><span class="tag-pill">supabase/client</span><span class="tag-pill">types/profile</span></td>
+            <td><span class="tag-pill">UserProvider</span><span class="tag-pill">useUser()</span></td>
+          </tr>
+          <tr>
+            <td>contexts/dashboard-context.tsx</td>
+            <td style="color:#e8e8e8;font-size:12px">UI state (view mode, sidebar)</td>
+            <td><span class="tag-pill">localStorage</span></td>
+            <td><span class="tag-pill">DashboardProvider</span><span class="tag-pill">useDashboard()</span></td>
+          </tr>
+          <tr>
+            <td>hooks/use-bookmarks.ts</td>
+            <td style="color:#e8e8e8;font-size:12px">Bookmark data + mutations</td>
+            <td><span class="tag-pill">tanstack/query</span><span class="tag-pill">/api/bookmarks</span></td>
+            <td><span class="tag-pill">useBookmarks()</span><span class="tag-pill">createBookmark()</span><span class="tag-pill">bulkAction()</span></td>
+          </tr>
+          <tr>
+            <td>hooks/use-categories.ts</td>
+            <td style="color:#e8e8e8;font-size:12px">Category tree + reorder</td>
+            <td><span class="tag-pill">tanstack/query</span><span class="tag-pill">/api/categories</span></td>
+            <td><span class="tag-pill">useCategories()</span></td>
+          </tr>
+          <tr>
+            <td>hooks/use-shared-links.ts</td>
+            <td style="color:#e8e8e8;font-size:12px">Shared link CRUD</td>
+            <td><span class="tag-pill">tanstack/query</span><span class="tag-pill">/api/shared-links</span></td>
+            <td><span class="tag-pill">useSharedLinks()</span></td>
+          </tr>
+          <tr>
+            <td>hooks/use-bookmark-counts.ts</td>
+            <td style="color:#e8e8e8;font-size:12px">Sidebar count stats</td>
+            <td><span class="tag-pill">tanstack/query</span><span class="tag-pill">/api/bookmarks/counts</span></td>
+            <td><span class="tag-pill">useBookmarkCounts()</span></td>
+          </tr>
+          <tr>
+            <td>components/shared/auth-guard.tsx</td>
+            <td style="color:#e8e8e8;font-size:12px">Route protection HOC</td>
+            <td><span class="tag-pill">user-context</span><span class="tag-pill">next/navigation</span></td>
+            <td><span class="tag-pill">AuthGuard</span></td>
+          </tr>
+          <tr>
+            <td>lib/export/to-csv.ts<br/>to-html.ts · to-json.ts</td>
+            <td style="color:#e8e8e8;font-size:12px">Export formatters</td>
+            <td><span class="tag-pill">types/bookmark</span></td>
+            <td><span class="tag-pill">toCSV()</span><span class="tag-pill">toHTML()</span><span class="tag-pill">toJSON()</span></td>
+          </tr>
+          <tr>
+            <td>lib/supabase/client.ts<br/>server.ts · admin.ts · middleware.ts</td>
+            <td style="color:#e8e8e8;font-size:12px">Supabase client instances</td>
+            <td><span class="tag-pill">@supabase/ssr</span><span class="tag-pill">@supabase/supabase-js</span></td>
+            <td><span class="tag-pill">createBrowserClient()</span><span class="tag-pill">createServerClient()</span><span class="tag-pill">createAdminClient()</span></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+</div>
+
+<script>
+  mermaid.initialize({
+    startOnLoad: true,
+    theme: 'dark',
+    themeVariables: {
+      background: '#161616',
+      primaryColor: '#1e3a1e',
+      primaryTextColor: '#e8e8e8',
+      primaryBorderColor: '#3a5e3a',
+      lineColor: '#555',
+      secondaryColor: '#1a1a2e',
+      tertiaryColor: '#2e1a1a',
+      fontFamily: 'Space Mono, monospace',
+      fontSize: '12px',
+    },
+    flowchart: { curve: 'basis', htmlLabels: true },
+    sequence: { useMaxWidth: false },
+  });
+
+  function show(id) {
+    document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
+    document.querySelectorAll('.nav button').forEach(el => el.classList.remove('active'));
+    document.getElementById(id).classList.add('active');
+    event.currentTarget.classList.add('active');
+  }
+</script>
+</body>
+</html>

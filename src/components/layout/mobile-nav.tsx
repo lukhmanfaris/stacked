@@ -2,81 +2,62 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { Home, Search, Plus, FolderOpen, Settings } from 'lucide-react'
 import { useDashboard } from '@/contexts/dashboard-context'
 import { cn } from '@/lib/utils'
+
+const NAV_ITEMS = [
+  { label: 'Home', href: '/dashboard' },
+  { label: 'Search', href: '/search' },
+  { label: 'Settings', href: '/settings' },
+]
 
 export function MobileNav() {
   const pathname = usePathname()
   const { setSidebarOpen, setFormOpen } = useDashboard()
 
   return (
-    <nav aria-label="Mobile navigation" className="fixed inset-x-0 bottom-0 z-30 border-t bg-background lg:hidden">
-      <div className="flex items-center justify-around px-2 py-1">
-        {/* Home */}
-        <Link
-          href="/dashboard"
-          className={cn(
-            'flex flex-col items-center gap-0.5 rounded-md px-3 py-1.5 text-xs transition-colors',
-            pathname === '/dashboard'
-              ? 'text-primary'
-              : 'text-muted-foreground hover:text-foreground',
-          )}
-        >
-          <Home className="size-5" />
-          <span>Home</span>
-        </Link>
+    <nav
+      aria-label="Mobile navigation"
+      className="fixed inset-x-0 bottom-0 z-30 border-t border-[var(--nd-border)] bg-[var(--nd-surface)] lg:hidden"
+    >
+      <div className="flex items-center justify-around px-4 py-2">
+        {NAV_ITEMS.map(({ label, href }) => {
+          const isActive = pathname === href
+          return (
+            <Link
+              key={href}
+              href={href}
+              className={cn(
+                'nd-label flex flex-col items-center gap-1 px-3 py-1 transition-colors',
+                isActive
+                  ? 'text-[var(--nd-text-display)]'
+                  : 'text-[var(--nd-text-disabled)] hover:text-[var(--nd-text-secondary)]',
+              )}
+            >
+              {isActive ? `[ ${label} ]` : label}
+            </Link>
+          )
+        })}
 
-        {/* Search */}
-        <Link
-          href="/search"
-          className={cn(
-            'flex flex-col items-center gap-0.5 rounded-md px-3 py-1.5 text-xs transition-colors',
-            pathname === '/search'
-              ? 'text-primary'
-              : 'text-muted-foreground hover:text-foreground',
-          )}
-        >
-          <Search className="size-5" />
-          <span>Search</span>
-        </Link>
-
-        {/* Add — prominent center button */}
+        {/* Add — prominent center action */}
         <button
           type="button"
           onClick={() => setFormOpen(true)}
           aria-label="Add bookmark"
-          className="flex flex-col items-center gap-0.5"
+          className="nd-label flex flex-col items-center gap-1 px-3 py-1 text-[var(--nd-text-disabled)] hover:text-[var(--nd-text-primary)] transition-colors"
         >
-          <div className="flex size-11 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-md active:scale-95 transition-transform">
-            <Plus className="size-5" />
-          </div>
+          + Add
         </button>
 
-        {/* Categories (opens sidebar drawer) */}
+        {/* Categories drawer */}
         <button
           type="button"
           onClick={() => setSidebarOpen(true)}
           aria-label="Open categories"
-          className="flex flex-col items-center gap-0.5 rounded-md px-3 py-1.5 text-xs text-muted-foreground transition-colors hover:text-foreground"
+          className="nd-label flex flex-col items-center gap-1 px-3 py-1 text-[var(--nd-text-disabled)] hover:text-[var(--nd-text-secondary)] transition-colors"
         >
-          <FolderOpen className="size-5" />
-          <span>Categories</span>
+          Folders
         </button>
-
-        {/* Settings */}
-        <Link
-          href="/settings"
-          className={cn(
-            'flex flex-col items-center gap-0.5 rounded-md px-3 py-1.5 text-xs transition-colors',
-            pathname === '/settings'
-              ? 'text-primary'
-              : 'text-muted-foreground hover:text-foreground',
-          )}
-        >
-          <Settings className="size-5" />
-          <span>Settings</span>
-        </Link>
       </div>
     </nav>
   )

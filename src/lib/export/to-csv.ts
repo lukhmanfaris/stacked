@@ -17,7 +17,7 @@ export function exportToCsv(bookmarks: Bookmark[], categories: Category[]): stri
     csvField(bm.url),
     csvField(bm.title),
     csvField(bm.description),
-    csvField(categoryMap.get(bm.category_id)),
+    csvField(bm.category_id ? categoryMap.get(bm.category_id) : ''),
     csvField(bm.tags.join('|')),
     csvField(bm.created_at),
   ])

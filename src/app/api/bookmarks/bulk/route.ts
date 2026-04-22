@@ -6,12 +6,17 @@ import { UnauthorizedError, ValidationError } from '@/lib/errors'
 const bulkActionSchema = z.object({
   ids: z.array(z.string().uuid()).min(1).max(200),
   action: z.discriminatedUnion('type', [
-    z.object({ type: z.literal('move'), category_id: z.string().uuid() }),
-    z.object({ type: z.literal('delete') }),
+    z.object({ type: z.literal('move'), category_id: z.string().uuid().nullable() }),
+    z.object({ type: z.literal('delete') }),       // soft-delete (Trash)
+    z.object({ type: z.literal('trash') }),        // alias of delete
+    z.object({ type: z.literal('restore') }),      // restore from Trash
+    z.object({ type: z.literal('hard_delete') }),  // permanent delete
     z.object({ type: z.literal('archive') }),
     z.object({ type: z.literal('unarchive') }),
     z.object({ type: z.literal('pin') }),
     z.object({ type: z.literal('unpin') }),
+    z.object({ type: z.literal('favorite') }),
+    z.object({ type: z.literal('unfavorite') }),
     z.object({ type: z.literal('tag'), tags: z.array(z.string().max(30)).max(10) }),
   ]),
 })
@@ -43,7 +48,28 @@ export async function POST(request: Request) {
         break
       }
 
-      case 'delete': {
+      case 'delete':
+      case 'trash': {
+        const { error } = await supabase
+          .from('bookmarks')
+          .update({ deleted_at: new Date().toISOString() })
+          .in('id', ids)
+          .eq('user_id', user.id)
+        if (error) throw error
+        break
+      }
+
+      case 'restore': {
+        const { error } = await supabase
+          .from('bookmarks')
+          .update({ deleted_at: null })
+          .in('id', ids)
+          .eq('user_id', user.id)
+        if (error) throw error
+        break
+      }
+
+      case 'hard_delete': {
         // Collect domains before deletion for orphan detection
         const { data: toDelete } = await supabase
           .from('bookmarks')
@@ -63,6 +89,26 @@ export async function POST(request: Request) {
         await Promise.allSettled(
           uniqueDomains.map(d => supabase.rpc('maybe_orphan_domain', { p_domain: d }))
         )
+        break
+      }
+
+      case 'favorite': {
+        const { error } = await supabase
+          .from('bookmarks')
+          .update({ is_favorite: true })
+          .in('id', ids)
+          .eq('user_id', user.id)
+        if (error) throw error
+        break
+      }
+
+      case 'unfavorite': {
+        const { error } = await supabase
+          .from('bookmarks')
+          .update({ is_favorite: false })
+          .in('id', ids)
+          .eq('user_id', user.id)
+        if (error) throw error
         break
       }
 

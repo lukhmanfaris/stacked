@@ -7,7 +7,7 @@ export function exportToHtml(bookmarks: Bookmark[], categories: Category[]): str
   // Group bookmarks by category
   const grouped = new Map<string, Bookmark[]>()
   for (const bm of bookmarks) {
-    const name = categoryMap.get(bm.category_id) ?? 'Uncategorized'
+    const name = (bm.category_id ? categoryMap.get(bm.category_id) : null) ?? 'Uncategorized'
     if (!grouped.has(name)) grouped.set(name, [])
     grouped.get(name)!.push(bm)
   }

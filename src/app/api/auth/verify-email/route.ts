@@ -2,6 +2,7 @@ import { NextRequest } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { apiSuccess, handleApiError } from '@/lib/api-response'
 import { RateLimitError, ValidationError } from '@/lib/errors'
+import { APP_CONFIG } from '@/lib/constants'
 
 // In-memory rate limit: email → last resend timestamp
 // NOTE: Resets on cold start in serverless deployments — best-effort for MVP.
@@ -36,7 +37,7 @@ export async function POST(request: NextRequest) {
       type: 'signup',
       email,
       options: {
-        emailRedirectTo: `${process.env.NEXT_PUBLIC_APP_URL}/auth/callback`,
+        emailRedirectTo: `${APP_CONFIG.url}/auth/callback`,
       },
     })
 

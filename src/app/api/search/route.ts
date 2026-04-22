@@ -47,11 +47,12 @@ export async function GET(request: Request) {
       .from('bookmarks')
       .select(
         'id,user_id,category_id,url,title,description,domain,tags,' +
-        'favicon_url,og_image_url,is_pinned,is_archived,link_status,' +
+        'favicon_url,og_image_url,is_pinned,is_archived,is_favorite,deleted_at,link_status,' +
         'sort_order,created_at,updated_at',
         { count: 'exact' }
       )
       .eq('user_id', user.id)
+      .is('deleted_at', null)
 
     // Full-text search — only when query is non-empty
     if (query.trim()) {

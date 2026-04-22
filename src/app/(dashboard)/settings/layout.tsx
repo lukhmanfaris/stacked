@@ -9,7 +9,7 @@ const NAV_ITEMS = [
   { label: 'Profile', href: '/settings/profile', icon: User },
   { label: 'Preferences', href: '/settings', icon: SlidersHorizontal, exact: true },
   { label: 'Import & Export', href: '/settings/import-export', icon: Upload },
-  { label: 'Shared Links', href: '/settings/shared-links', icon: Share2, disabled: true },
+  { label: 'Shared Links', href: '/settings/shared-links', icon: Share2 },
 ]
 
 export default function SettingsLayout({ children }: { children: React.ReactNode }) {
@@ -28,17 +28,7 @@ export default function SettingsLayout({ children }: { children: React.ReactNode
             ? pathname === item.href
             : pathname.startsWith(item.href) && !item.exact
 
-          return item.disabled ? (
-            <span
-              key={item.href}
-              className="flex cursor-not-allowed items-center gap-2.5 rounded-md px-3 py-2 text-sm text-muted-foreground/50"
-              title="Coming in a future update"
-            >
-              <Icon className="size-4 flex-none" />
-              {item.label}
-              <span className="ml-auto hidden text-xs lg:block">Soon</span>
-            </span>
-          ) : (
+          return (
             <Link
               key={item.href}
               href={item.href}

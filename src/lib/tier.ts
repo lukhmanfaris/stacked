@@ -12,6 +12,7 @@ const resourceCountQuery: Record<TierResource, (userId: string) => Promise<numbe
       .select('id', { count: 'exact', head: true })
       .eq('user_id', userId)
       .eq('is_archived', false)
+      .is('deleted_at', null)
     return count ?? 0
   },
   categories: async (userId) => {
@@ -22,8 +23,14 @@ const resourceCountQuery: Record<TierResource, (userId: string) => Promise<numbe
       .eq('user_id', userId)
     return count ?? 0
   },
-  // TODO M6: wire up real shared_links count query once shared_links table is created
-  shared_links: async (_userId) => 0,
+  shared_links: async (userId) => {
+    const supabase = await createClient()
+    const { count } = await supabase
+      .from('shared_links')
+      .select('id', { count: 'exact', head: true })
+      .eq('user_id', userId)
+    return count ?? 0
+  },
 }
 
 export async function checkTierLimit(

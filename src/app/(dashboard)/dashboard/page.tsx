@@ -2,13 +2,14 @@
 
 import { Suspense, useState, useCallback, useEffect, useRef } from 'react'
 import { useSearchParams } from 'next/navigation'
-import { BookOpen } from 'lucide-react'
 import { toast } from 'sonner'
 import { BookmarkGrid } from '@/components/bookmarks/bookmark-grid'
 import { BookmarkStack } from '@/components/bookmarks/bookmark-stack'
 import { BookmarkActions } from '@/components/bookmarks/bookmark-actions'
 import { BookmarkForm } from '@/components/bookmarks/bookmark-form'
 import { BookmarkCardSkeleton } from '@/components/bookmarks/bookmark-skeleton'
+import { DashboardStats } from '@/components/dashboard/dashboard-stats'
+import { FilterPanel } from '@/components/dashboard/filter-panel'
 import { useBookmarks } from '@/hooks/use-bookmarks'
 import { useCategories } from '@/hooks/use-categories'
 import { useKeyboardShortcuts } from '@/hooks/use-keyboard-shortcuts'
@@ -39,20 +40,15 @@ function DashboardShortcuts({
 
 function EmptyState({ onAdd }: { onAdd: () => void }) {
   return (
-    <div className="flex flex-col items-center justify-center gap-4 py-20 text-center">
-      <div className="flex size-16 items-center justify-center rounded-2xl bg-muted">
-        <BookOpen className="size-8 text-muted-foreground" />
-      </div>
-      <div className="flex flex-col gap-1">
-        <p className="font-medium">No bookmarks yet</p>
-        <p className="text-sm text-muted-foreground">
-          Press <kbd className="rounded border px-1 py-0.5 text-xs">N</kbd> or click + to save your first link.
-        </p>
-      </div>
+    <div className="flex flex-col items-center justify-center gap-4 py-24 text-center">
+      <p className="nd-label text-[var(--nd-text-secondary)]">No bookmarks yet</p>
+      <p className="font-sans text-xs text-[var(--nd-text-disabled)]">
+        Press <kbd className="rounded-[2px] border border-[var(--nd-border-visible)] px-1 py-0.5 font-mono text-[10px]">N</kbd> or click + to save your first link.
+      </p>
       <button
         type="button"
         onClick={onAdd}
-        className="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90"
+        className="nd-label rounded-full border border-[var(--nd-border-visible)] px-6 py-2.5 text-[var(--nd-text-primary)] transition-colors hover:border-[var(--nd-text-display)] hover:text-[var(--nd-text-display)]"
       >
         Add bookmark
       </button>
@@ -81,7 +77,7 @@ function StackView({
   const uncategorised = bookmarks.filter(b => !b.category_id)
 
   return (
-    <div className="flex flex-wrap gap-6 p-6">
+    <div className="grid gap-6 p-6 [grid-template-columns:repeat(auto-fill,minmax(240px,1fr))]">
       {grouped.map(({ category, bookmarks: bks }) => (
         <BookmarkStack
           key={category.id}
@@ -105,18 +101,73 @@ function StackView({
 
 // ─── Main page ────────────────────────────────────────────────────────────────
 
+type SortKey = 'newest' | 'oldest' | 'az' | 'za' | 'updated'
+
+function sortToFilter(sort: string | null | undefined): { sort_by: 'created_at' | 'updated_at' | 'title'; sort_dir: 'asc' | 'desc' } {
+  switch ((sort ?? 'newest') as SortKey) {
+    case 'oldest':  return { sort_by: 'created_at', sort_dir: 'asc' }
+    case 'az':      return { sort_by: 'title',      sort_dir: 'asc' }
+    case 'za':      return { sort_by: 'title',      sort_dir: 'desc' }
+    case 'updated': return { sort_by: 'updated_at', sort_dir: 'desc' }
+    case 'newest':
+    default:        return { sort_by: 'created_at', sort_dir: 'desc' }
+  }
+}
+
+function buildFiltersFromParams(params: URLSearchParams) {
+  const categoryParam = params.get('category')
+  const view = params.get('view')
+  const tag = params.get('tag')
+  const sort = params.get('sort')
+  const query = params.get('q') ?? undefined
+  const linkStatus = params.get('link_status') as
+    | 'unchecked' | 'alive' | 'dead' | 'redirected' | 'timeout' | null
+  const filterParam = params.get('filter') // legacy: filter=pinned|archived
+
+  const sortFilters = sortToFilter(sort)
+
+  // view → filter mapping
+  let category_id: string | null | undefined = categoryParam ?? undefined
+  let is_pinned: boolean | undefined
+  let is_archived: boolean | undefined = false
+  let is_favorite: boolean | undefined
+  let is_trashed: boolean | undefined
+  let tags: string[] | undefined
+
+  if (view === 'favorites')      is_favorite = true
+  else if (view === 'archive')   is_archived = true
+  else if (view === 'trash')     { is_trashed = true; is_archived = undefined }
+  else if (view === 'unsorted')  category_id = null
+  else if (filterParam === 'pinned')   is_pinned = true
+  else if (filterParam === 'archived') is_archived = true
+
+  if (tag) tags = [tag]
+
+  return {
+    query,
+    category_id,
+    is_pinned,
+    is_archived,
+    is_favorite,
+    is_trashed,
+    tags,
+    link_status: linkStatus ?? undefined,
+    ...sortFilters,
+  }
+}
+
 function DashboardContent() {
   const searchParams = useSearchParams()
-  const categoryId = searchParams.get('category') ?? undefined
-  const filterParam = searchParams.get('filter') ?? undefined
   const { viewMode, cycleViewMode, formOpen, setFormOpen } = useDashboard()
   const { categories } = useCategories()
 
-  const initialFilters = {
-    category_id: categoryId,
-    is_pinned: filterParam === 'pinned' ? true : undefined,
-    is_archived: filterParam === 'archived' ? true : false,
-  }
+  const initialFilters = buildFiltersFromParams(searchParams)
+  const isTrashView = searchParams.get('view') === 'trash'
+  const hasAnyFilter =
+    !!searchParams.get('view') ||
+    !!searchParams.get('tag') ||
+    !!searchParams.get('category') ||
+    !!searchParams.get('link_status')
 
   const {
     bookmarks,
@@ -124,6 +175,7 @@ function DashboardContent() {
     addBookmark,
     updateBookmark,
     deleteBookmark,
+    permanentDelete,
     bulkAction,
     isAdding,
     setFilters,
@@ -133,12 +185,9 @@ function DashboardContent() {
   const isFirstRender = useRef(true)
   useEffect(() => {
     if (isFirstRender.current) { isFirstRender.current = false; return }
-    setFilters({
-      category_id: categoryId,
-      is_pinned: filterParam === 'pinned' ? true : undefined,
-      is_archived: filterParam === 'archived' ? true : false,
-    })
-  }, [categoryId, filterParam])
+    setFilters(buildFiltersFromParams(searchParams))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams])
 
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [editingBookmark, setEditingBookmark] = useState<Bookmark | null>(null)
@@ -183,7 +232,33 @@ function DashboardContent() {
 
   async function handleDelete(id: string) {
     await deleteBookmark(id)
-    toast.success('Bookmark deleted')
+    toast.success('Moved to Trash')
+  }
+
+  async function handlePermanentDelete(id: string) {
+    if (!confirm('Permanently delete this bookmark? This cannot be undone.')) return
+    await permanentDelete(id)
+    toast.success('Bookmark deleted forever')
+  }
+
+  async function handleRestore(id: string) {
+    await bulkAction([id], { type: 'restore' })
+    toast.success('Bookmark restored')
+  }
+
+  async function handleTogglePin(id: string, next: boolean) {
+    await bulkAction([id], { type: next ? 'pin' : 'unpin' })
+  }
+
+  async function handleToggleFavorite(id: string, next: boolean) {
+    await bulkAction([id], { type: next ? 'favorite' : 'unfavorite' })
+  }
+
+  async function handleArchiveSingle(id: string) {
+    const target = bookmarks.find(b => b.id === id)
+    if (!target) return
+    await bulkAction([id], { type: target.is_archived ? 'unarchive' : 'archive' })
+    toast.success(target.is_archived ? 'Unarchived' : 'Archived')
   }
 
   const openAdd = useCallback(() => setFormOpen(true), [setFormOpen])
@@ -202,7 +277,7 @@ function DashboardContent() {
 
       {/* ── Bulk actions toolbar ─────────────────────────────── */}
       {selectedIds.size > 0 && (
-        <div className="sticky top-0 z-20 border-b bg-background/95 backdrop-blur px-4 py-2">
+        <div className="sticky top-0 z-20 border-b border-[var(--nd-border)] bg-[var(--nd-surface)] px-4 py-2">
           <BookmarkActions
             selectedIds={Array.from(selectedIds)}
             onAction={handleBulkAction}
@@ -212,9 +287,16 @@ function DashboardContent() {
         </div>
       )}
 
+      {/* ── Stats — only on default "All Bookmarks" view ─────── */}
+      {!hasAnyFilter && (
+        <div className="px-6 pt-6">
+          <DashboardStats />
+        </div>
+      )}
+
       {/* ── Main content ─────────────────────────────────────── */}
       {isLoading ? (
-        <div className="grid grid-cols-1 gap-4 p-6 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+        <div className="grid grid-cols-1 gap-3 p-6 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
           {Array.from({ length: 8 }).map((_, i) => (
             <BookmarkCardSkeleton key={i} />
           ))}
@@ -232,19 +314,28 @@ function DashboardContent() {
           bookmarks={bookmarks}
           view={viewMode === 'grid' ? 'grid' : 'list'}
           selectedIds={selectedIds}
+          isTrash={isTrashView}
           onSelect={handleSelect}
           onEdit={b => setEditingBookmark(b)}
           onDelete={handleDelete}
+          onPermanentDelete={handlePermanentDelete}
+          onRestore={handleRestore}
+          onTogglePin={handleTogglePin}
+          onToggleFavorite={handleToggleFavorite}
+          onArchive={handleArchiveSingle}
           className={cn(viewMode === 'list' && 'gap-1')}
         />
       )}
 
+      {/* ── Filter slide-over ─────────────────────────────────── */}
+      <FilterPanel />
+
       {/* ── Add / Edit form modal ─────────────────────────────── */}
       {(formOpen || editingBookmark) && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm">
-          <div className="w-full max-w-lg rounded-xl bg-background shadow-2xl ring-1 ring-border">
-            <div className="border-b px-4 py-3">
-              <h2 className="text-sm font-semibold">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4">
+          <div className="w-full max-w-lg rounded-[16px] border border-[var(--nd-border-visible)] bg-[var(--nd-surface)]">
+            <div className="border-b border-[var(--nd-border)] px-4 py-3">
+              <h2 className="nd-label text-[var(--nd-text-secondary)]">
                 {editingBookmark ? 'Edit bookmark' : 'Add bookmark'}
               </h2>
             </div>

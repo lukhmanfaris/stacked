@@ -8,7 +8,7 @@ export function exportToJson(bookmarks: Bookmark[], categories: Category[]): str
     url: bm.url,
     title: bm.title,
     description: bm.description ?? undefined,
-    category: categoryMap.get(bm.category_id) ?? undefined,
+    category: bm.category_id ? categoryMap.get(bm.category_id) : undefined,
     tags: bm.tags.length > 0 ? bm.tags : undefined,
     is_pinned: bm.is_pinned || undefined,
     created_at: bm.created_at,

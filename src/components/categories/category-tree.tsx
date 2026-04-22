@@ -27,11 +27,18 @@ interface SortableItemProps {
   isActive: boolean
   depth?: number
   onSelect: (id: string) => void
+  counts?: Record<string, number>
+  activeCategoryId?: string
 }
 
-function SortableItem({ category, isActive, depth = 0, onSelect }: SortableItemProps) {
+function countFor(cat: { id: string; bookmark_count: number }, counts?: Record<string, number>) {
+  return counts?.[cat.id] ?? cat.bookmark_count
+}
+
+function SortableItem({ category, isActive, depth = 0, onSelect, counts, activeCategoryId }: SortableItemProps) {
   const [expanded, setExpanded] = useState(true)
   const hasChildren = category.children.length > 0
+  const count = countFor(category, counts)
 
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
     useSortable({ id: category.id })
@@ -48,8 +55,10 @@ function SortableItem({ category, isActive, depth = 0, onSelect }: SortableItemP
         type="button"
         onClick={() => onSelect(category.id)}
         className={cn(
-          'group flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-sm transition-colors hover:bg-muted',
-          isActive && 'bg-muted font-medium',
+          'group flex w-full items-center gap-2 rounded-[6px] px-2 py-1.5 transition-colors',
+          isActive
+            ? 'bg-[var(--nd-surface-raised)] text-[var(--nd-text-display)]'
+            : 'text-[var(--nd-text-secondary)] hover:bg-[var(--nd-surface-raised)] hover:text-[var(--nd-text-primary)]',
           depth > 0 && 'ml-4',
         )}
       >
@@ -66,24 +75,24 @@ function SortableItem({ category, isActive, depth = 0, onSelect }: SortableItemP
 
         {/* Color dot */}
         <span
-          className="h-2.5 w-2.5 flex-none rounded-full"
+          className="h-2 w-2 flex-none rounded-full"
           style={{ backgroundColor: category.color }}
         />
 
         {/* Name */}
-        <span className="flex-1 truncate text-left">{category.name}</span>
+        <span className="flex-1 truncate text-left font-sans text-[13px]">{category.name}</span>
 
         {/* Count badge */}
-        {category.bookmark_count > 0 && (
-          <span className="rounded bg-muted px-1.5 py-0.5 text-xs text-muted-foreground tabular-nums">
-            {category.bookmark_count}
+        {count > 0 && (
+          <span className="font-mono text-[10px] tabular-nums text-[var(--nd-text-disabled)]">
+            {count}
           </span>
         )}
 
         {/* Expand/collapse */}
         {hasChildren && (
           <ChevronRight
-            className={cn('h-3.5 w-3.5 flex-none transition-transform text-muted-foreground', expanded && 'rotate-90')}
+            className={cn('h-3.5 w-3.5 flex-none transition-transform text-[var(--nd-text-disabled)]', expanded && 'rotate-90')}
             onClick={e => { e.stopPropagation(); setExpanded(v => !v) }}
           />
         )}
@@ -91,29 +100,35 @@ function SortableItem({ category, isActive, depth = 0, onSelect }: SortableItemP
 
       {/* Children */}
       {hasChildren && expanded && (
-        <div className="ml-2 border-l pl-2">
-          {category.children.map((child: Category) => (
-            <button
-              key={child.id}
-              type="button"
-              onClick={() => onSelect(child.id)}
-              className={cn(
-                'flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-sm transition-colors hover:bg-muted',
-                isActive && 'bg-muted font-medium',
-              )}
-            >
-              <span
-                className="h-2 w-2 flex-none rounded-full"
-                style={{ backgroundColor: child.color }}
-              />
-              <span className="flex-1 truncate text-left">{child.name}</span>
-              {child.bookmark_count > 0 && (
-                <span className="rounded bg-muted px-1.5 py-0.5 text-xs text-muted-foreground tabular-nums">
-                  {child.bookmark_count}
-                </span>
-              )}
-            </button>
-          ))}
+        <div className="ml-2 border-l border-[var(--nd-border)] pl-2">
+          {category.children.map((child: Category) => {
+            const childCount = countFor(child, counts)
+            const childActive = child.id === activeCategoryId
+            return (
+              <button
+                key={child.id}
+                type="button"
+                onClick={() => onSelect(child.id)}
+                className={cn(
+                  'flex w-full items-center gap-2 rounded-[6px] px-2 py-1.5 transition-colors',
+                  childActive
+                    ? 'bg-[var(--nd-surface-raised)] text-[var(--nd-text-display)]'
+                    : 'text-[var(--nd-text-secondary)] hover:bg-[var(--nd-surface-raised)] hover:text-[var(--nd-text-primary)]',
+                )}
+              >
+                <span
+                  className="h-2 w-2 flex-none rounded-full"
+                  style={{ backgroundColor: child.color }}
+                />
+                <span className="flex-1 truncate text-left font-sans text-[13px]">{child.name}</span>
+                {childCount > 0 && (
+                  <span className="font-mono text-[10px] tabular-nums text-[var(--nd-text-disabled)]">
+                    {childCount}
+                  </span>
+                )}
+              </button>
+            )
+          })}
         </div>
       )}
     </div>
@@ -127,6 +142,8 @@ interface CategoryTreeProps {
   activeCategoryId?: string
   onSelect?: (id: string) => void
   onReorder?: (items: { id: string; sort_order: number }[]) => void
+  /** Live counts keyed by category id; falls back to category.bookmark_count when missing */
+  counts?: Record<string, number>
 }
 
 export function CategoryTree({
@@ -134,6 +151,7 @@ export function CategoryTree({
   activeCategoryId,
   onSelect,
   onReorder,
+  counts,
 }: CategoryTreeProps) {
   const [items, setItems] = useState(categories)
 
@@ -169,7 +187,9 @@ export function CategoryTree({
               key={category.id}
               category={category}
               isActive={category.id === activeCategoryId}
+              activeCategoryId={activeCategoryId}
               onSelect={id => onSelect?.(id)}
+              counts={counts}
             />
           ))}
         </nav>

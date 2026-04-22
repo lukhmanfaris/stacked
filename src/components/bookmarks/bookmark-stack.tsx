@@ -24,21 +24,20 @@ export function BookmarkStack({
   const [expanded, setExpanded] = useState(false)
 
   const count = bookmarks.length
-  const preview = bookmarks.slice(0, 3)
-  const fanned = bookmarks.slice(0, 5) // max visible cards when expanded
+  const preview = bookmarks.slice(0, 4)
+  const fanned = bookmarks.slice(0, 6)
 
   if (count === 0) {
     return (
       <div
         className={cn(
-          'flex h-44 items-center justify-center rounded-xl border border-dashed bg-card text-center',
+          'flex h-40 items-center justify-center rounded-[12px] border border-dashed border-[var(--nd-border)] text-center',
           className,
         )}
-        style={{ borderColor: categoryColor + '60' }}
       >
         <div>
-          <p className="text-sm font-medium" style={{ color: categoryColor }}>{categoryName}</p>
-          <p className="mt-1 text-xs text-muted-foreground">No bookmarks yet</p>
+          <p className="nd-label text-[var(--nd-text-disabled)]">{categoryName}</p>
+          <p className="mt-1 font-sans text-xs text-[var(--nd-text-disabled)]">No bookmarks yet</p>
         </div>
       </div>
     )
@@ -48,104 +47,104 @@ export function BookmarkStack({
     <div className={cn('relative', className)}>
       <AnimatePresence mode="wait">
         {!expanded ? (
-          // ── Collapsed: card pile ──────────────────────────────────────────
+          /* ── Collapsed: card pile ──────────────────────────────────── */
           <motion.button
             key="stack"
             type="button"
             onClick={() => setExpanded(true)}
-            className="relative h-44 w-full cursor-pointer"
+            className="relative h-40 w-full cursor-pointer"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            transition={{ duration: 0.15 }}
+            transition={{ duration: 0.15, ease: [0.25, 0.1, 0.25, 1] }}
           >
-            {/* Back cards (decorative) */}
+            {/* Back cards (decorative depth) */}
             {count >= 3 && (
               <div
-                className="absolute inset-x-2 top-2 h-full rounded-xl border bg-card shadow-sm"
-                style={{ transform: 'rotate(3deg)', borderColor: categoryColor + '40' }}
+                className="absolute inset-x-2 top-2 h-full rounded-[12px] border border-[var(--nd-border)] bg-[var(--nd-surface-raised)]"
+                style={{ transform: 'rotate(2.5deg)' }}
               />
             )}
             {count >= 2 && (
               <div
-                className="absolute inset-x-1 top-1 h-full rounded-xl border bg-card shadow-sm"
-                style={{ transform: 'rotate(-1.5deg)', borderColor: categoryColor + '60' }}
+                className="absolute inset-x-1 top-1 h-full rounded-[12px] border border-[var(--nd-border)] bg-[var(--nd-surface)]"
+                style={{ transform: 'rotate(-1deg)' }}
               />
             )}
 
             {/* Top card */}
-            <div
-              className="absolute inset-0 flex flex-col rounded-xl border bg-card p-4 shadow-md transition-shadow hover:shadow-lg"
-              style={{ borderColor: categoryColor + '80', borderLeftWidth: 3, borderLeftColor: categoryColor }}
-            >
+            <div className="absolute inset-0 flex flex-col rounded-[12px] border border-[var(--nd-border-visible)] bg-[var(--nd-surface)] p-4 transition-colors hover:border-[var(--nd-text-display)]">
+              {/* Category + count */}
               <div className="flex items-center justify-between">
-                <span className="text-sm font-semibold" style={{ color: categoryColor }}>
+                <span className="nd-label text-[var(--nd-text-primary)]">
                   {categoryName}
                 </span>
-                <span className="rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">
-                  {count} link{count !== 1 ? 's' : ''}
+                <span className="nd-label text-[var(--nd-text-disabled)]">
+                  {count}
                 </span>
               </div>
 
               {/* Favicon preview row */}
-              <div className="mt-3 flex items-center gap-1.5">
+              <div className="mt-4 flex items-center gap-2">
                 {preview.map(b => (
-                  <Favicon key={b.id} domain={b.domain} faviconUrl={b.favicon_url} size={20} />
+                  <Favicon key={b.id} domain={b.domain} faviconUrl={b.favicon_url} size={16} className="opacity-60" />
                 ))}
-                {count > 3 && (
-                  <span className="text-xs text-muted-foreground">+{count - 3}</span>
+                {count > 4 && (
+                  <span className="nd-label text-[var(--nd-text-disabled)]">+{count - 4}</span>
                 )}
               </div>
 
               {/* Top bookmark title */}
               {bookmarks[0] && (
-                <p className="mt-auto line-clamp-1 text-xs text-muted-foreground">
+                <p className="mt-auto truncate font-sans text-xs text-[var(--nd-text-secondary)]">
                   {bookmarks[0].title}
                 </p>
               )}
             </div>
           </motion.button>
         ) : (
-          // ── Expanded: fan-out ─────────────────────────────────────────────
+          /* ── Expanded: list view ────────────────────────────────────── */
           <motion.div
             key="fanned"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            transition={{ duration: 0.15 }}
-            className="flex flex-col gap-2"
+            transition={{ duration: 0.15, ease: [0.25, 0.1, 0.25, 1] }}
+            className="flex flex-col"
           >
-            <div className="flex items-center justify-between px-1">
-              <span className="text-sm font-semibold" style={{ color: categoryColor }}>
-                {categoryName}
-              </span>
+            {/* Header */}
+            <div className="mb-2 flex items-center justify-between border-b border-[var(--nd-border)] pb-2">
+              <span className="nd-label text-[var(--nd-text-primary)]">{categoryName}</span>
               <button
                 type="button"
                 onClick={() => setExpanded(false)}
-                className="text-xs text-muted-foreground hover:text-foreground"
+                className="nd-label text-[var(--nd-text-disabled)] hover:text-[var(--nd-text-secondary)] transition-colors"
               >
                 Collapse
               </button>
             </div>
 
-            <div className="flex flex-col gap-1">
+            <div className="flex flex-col">
               {fanned.map((bookmark, i) => (
                 <motion.button
                   key={bookmark.id}
                   type="button"
                   onClick={() => onBookmarkClick?.(bookmark)}
-                  initial={{ opacity: 0, y: -8 }}
+                  initial={{ opacity: 0, y: -4 }}
                   animate={{ opacity: 1, y: 0 }}
-                  transition={{ delay: i * 0.05, type: 'spring', stiffness: 300, damping: 25 }}
-                  className="flex w-full items-center gap-2 rounded-lg border bg-card px-3 py-2 text-left transition-colors hover:bg-muted/50"
+                  transition={{ delay: i * 0.04, duration: 0.15, ease: [0.25, 0.1, 0.25, 1] }}
+                  className="flex w-full items-center gap-2 border-b border-[var(--nd-border)] px-0 py-2.5 text-left transition-colors hover:bg-[var(--nd-surface-raised)] last:border-b-0"
                 >
-                  <Favicon domain={bookmark.domain} faviconUrl={bookmark.favicon_url} size={16} />
-                  <span className="min-w-0 flex-1 truncate text-xs">{bookmark.title}</span>
+                  <Favicon domain={bookmark.domain} faviconUrl={bookmark.favicon_url} size={16} className="shrink-0 opacity-50" />
+                  <span className="min-w-0 flex-1 truncate font-sans text-xs text-[var(--nd-text-primary)]">
+                    {bookmark.title}
+                  </span>
+                  <span className="nd-label shrink-0 text-[var(--nd-text-disabled)]">{bookmark.domain}</span>
                 </motion.button>
               ))}
 
-              {count > 5 && (
-                <p className="px-1 text-xs text-muted-foreground">+{count - 5} more</p>
+              {count > 6 && (
+                <p className="nd-label pt-2 text-[var(--nd-text-disabled)]">+{count - 6} more</p>
               )}
             </div>
           </motion.div>

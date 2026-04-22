@@ -17,10 +17,13 @@ export async function GET(request: Request) {
 
     const { searchParams } = new URL(request.url)
 
+    const rawCategoryId = searchParams.get('category_id')
     const filters: BookmarkFilters = {
-      category_id: searchParams.get('category_id') || undefined,
+      category_id: rawCategoryId === 'null' ? null : (rawCategoryId || undefined),
       is_pinned: searchParams.has('is_pinned') ? searchParams.get('is_pinned') === 'true' : undefined,
       is_archived: searchParams.has('is_archived') ? searchParams.get('is_archived') === 'true' : false,
+      is_favorite: searchParams.has('is_favorite') ? searchParams.get('is_favorite') === 'true' : undefined,
+      is_trashed: searchParams.has('is_trashed') ? searchParams.get('is_trashed') === 'true' : false,
       link_status: (searchParams.get('link_status') as BookmarkFilters['link_status']) || undefined,
       sort_by: (searchParams.get('sort_by') as BookmarkFilters['sort_by']) || 'created_at',
       sort_dir: (searchParams.get('sort_dir') as BookmarkFilters['sort_dir']) || 'desc',
@@ -45,9 +48,21 @@ export async function GET(request: Request) {
       .select('*', { count: 'exact' })
       .eq('user_id', user.id)
 
-    if (filters.category_id) query = query.eq('category_id', filters.category_id)
+    // Trash gating: by default exclude soft-deleted; is_trashed=true returns ONLY trashed
+    if (filters.is_trashed) {
+      query = query.not('deleted_at', 'is', null)
+    } else {
+      query = query.is('deleted_at', null)
+    }
+
+    if (filters.category_id === null) query = query.is('category_id', null)
+    else if (filters.category_id) query = query.eq('category_id', filters.category_id)
     if (filters.is_pinned !== undefined) query = query.eq('is_pinned', filters.is_pinned)
-    if (filters.is_archived !== undefined) query = query.eq('is_archived', filters.is_archived)
+    if (filters.is_favorite !== undefined) query = query.eq('is_favorite', filters.is_favorite)
+    // Don't filter is_archived when looking at trash (trash includes archived rows)
+    if (!filters.is_trashed && filters.is_archived !== undefined) {
+      query = query.eq('is_archived', filters.is_archived)
+    }
     if (filters.link_status) query = query.eq('link_status', filters.link_status)
     if (filters.tags?.length) query = query.contains('tags', filters.tags)
 
@@ -123,19 +138,20 @@ export async function POST(request: Request) {
     const finalTitle = titleOverride || metaTitle || domain
     const finalDescription = descOverride ?? metaDescription ?? null
 
-    // Check for duplicate URL (warn, don't block)
+    // Check for duplicate URL among non-trashed bookmarks (warn, don't block)
     const { data: existing } = await supabase
       .from('bookmarks')
       .select('id')
       .eq('user_id', user.id)
       .eq('url', url)
+      .is('deleted_at', null)
       .maybeSingle()
 
     const { data: bookmark, error } = await supabase
       .from('bookmarks')
       .insert({
         user_id: user.id,
-        category_id,
+        category_id: category_id ?? null,
         url,
         title: finalTitle,
         description: finalDescription,
@@ -144,6 +160,7 @@ export async function POST(request: Request) {
         favicon_url: faviconUrl,
         og_image_url: ogImageUrl,
         is_pinned: is_pinned ?? false,
+        is_favorite: parsed.data.is_favorite ?? false,
       })
       .select()
       .single()
