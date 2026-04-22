@@ -915,31 +915,6 @@ See `supabase/migrations/` in the project structure. Key design decisions:
 
 ---
 
-## Environment Variables
-
-```env
-# Supabase
-NEXT_PUBLIC_SUPABASE_URL=https://xxxxx.supabase.co
-NEXT_PUBLIC_SUPABASE_ANON_KEY=eyJhbGciOi...
-SUPABASE_SERVICE_ROLE_KEY=eyJhbGciOi...       # Server-only, never exposed
-
-# App
-NEXT_PUBLIC_APP_URL=http://localhost:3000
-NEXT_PUBLIC_APP_NAME=Stacked
-
-# OAuth (configured in Supabase dashboard)
-# GOOGLE_CLIENT_ID=...
-# GOOGLE_CLIENT_SECRET=...
-# GITHUB_CLIENT_ID=...
-# GITHUB_CLIENT_SECRET=...
-
-# Monitoring (optional)
-SENTRY_DSN=https://...
-NEXT_PUBLIC_VERCEL_ANALYTICS_ID=...
-```
-
----
-
 ## Getting Started
 
 ```bash
