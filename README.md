@@ -66,4 +66,4 @@ Contributions are not open yet. Stay tuned.
 
 ---
 
-**Stacked** is a project by HALFX INDUSTRIES.
+**Stacked** is a project by lukhmanfaris.
