@@ -1,9 +1,19 @@
+'use client'
+
 import { Suspense } from 'react'
 import { AuthGuard } from '@/components/shared/auth-guard'
-import { DashboardProvider } from '@/contexts/dashboard-context'
+import { DashboardProvider, useDashboard } from '@/contexts/dashboard-context'
 import { Sidebar } from '@/components/layout/sidebar'
 import { TopBar } from '@/components/layout/top-bar'
 import { MobileNav } from '@/components/layout/mobile-nav'
+import { CommandPalette } from '@/components/shared/command-palette'
+import { useKeyboardShortcuts } from '@/hooks/use-keyboard-shortcuts'
+
+function PaletteShortcut() {
+  const { setPaletteOpen } = useDashboard()
+  useKeyboardShortcuts({ COMMAND_PALETTE: () => setPaletteOpen(true) })
+  return null
+}
 
 export default function DashboardLayout({
   children,
@@ -13,6 +23,9 @@ export default function DashboardLayout({
   return (
     <AuthGuard>
       <DashboardProvider>
+        <PaletteShortcut />
+        <CommandPalette />
+
         {/* Full-screen flex container */}
         <div className="flex h-screen overflow-hidden bg-background">
           {/* Sidebar — hidden on mobile, fixed on desktop */}

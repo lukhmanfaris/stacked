@@ -61,7 +61,7 @@ function TermsContent() {
           this requirement.
         </p>
         <p>
-          Notify us immediately at support@halfxindustries.com if you suspect any unauthorised
+          Notify us immediately at halfx.ind@gmail.com if you suspect any unauthorised
           access to your account.
         </p>
       </Section>
@@ -157,7 +157,7 @@ function TermsContent() {
       <Section title="12. Contact">
         <p>
           For questions about these Terms, contact us at:{' '}
-          <span className="text-[var(--nd-text-primary)]">support@halfxindustries.com</span>
+          <span className="text-[var(--nd-text-primary)]">halfx.ind@gmail.com</span>
         </p>
       </Section>
     </div>
@@ -265,7 +265,7 @@ function PrivacyContent() {
         </ul>
         <p>
           To exercise any of these rights, contact our data officer at:{' '}
-          <span className="text-[var(--nd-text-primary)]">privacy@halfxindustries.com</span>
+          <span className="text-[var(--nd-text-primary)]">halfx.ind@gmail.com</span>
         </p>
         <p>
           We will respond to verified requests within 21 days, in accordance with the PDPA 2010.
@@ -288,7 +288,7 @@ function PrivacyContent() {
         <p>
           You may opt out at any time by clicking the unsubscribe link in any marketing email,
           or by contacting us at{' '}
-          <span className="text-[var(--nd-text-primary)]">privacy@halfxindustries.com</span>.
+          <span className="text-[var(--nd-text-primary)]">halfx.ind@gmail.com</span>.
           Opting out of marketing does not affect your receipt of transactional emails.
         </p>
       </Section>
@@ -309,7 +309,7 @@ function PrivacyContent() {
         <ul className="list-none space-y-0.5 pl-1">
           <li>Halfx Industries</li>
           <li>Data Protection Officer</li>
-          <li><span className="text-[var(--nd-text-primary)]">privacy@halfxindustries.com</span></li>
+          <li><span className="text-[var(--nd-text-primary)]">halfx.ind@gmail.com</span></li>
         </ul>
       </Section>
     </div>

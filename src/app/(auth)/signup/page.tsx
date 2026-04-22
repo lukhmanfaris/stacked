@@ -10,6 +10,7 @@ import { supabase } from '@/lib/supabase/client'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import Link from 'next/link'
 import { LegalModal } from '@/components/shared/legal-modal'
 
 const signupSchema = z.object({
@@ -17,7 +18,7 @@ const signupSchema = z.object({
   password: z.string().min(8, 'Password must be at least 8 characters'),
   confirmPassword: z.string(),
   agreed: z.boolean().refine(v => v === true, 'Must accept terms to continue'),
-  marketingConsent: z.boolean().default(false),
+  marketingConsent: z.boolean().optional(),
 }).refine(data => data.password === data.confirmPassword, {
   message: 'Passwords do not match',
   path: ['confirmPassword'],
@@ -58,7 +59,7 @@ export default function SignupPage() {
         return
       }
       // Store marketing consent on profile (created by DB trigger on auth.users insert)
-      if (authData.user && data.marketingConsent) {
+      if (authData.user && (data.marketingConsent ?? false)) {
         await supabase.from('profiles')
           .update({ marketing_consent: true })
           .eq('id', authData.user.id)

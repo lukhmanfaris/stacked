@@ -131,6 +131,7 @@
     .sev-warn { background: rgba(251,191,36,0.1); color: var(--yellow); border: 1px solid rgba(251,191,36,0.25); }
     .sev-info { background: rgba(96,165,250,0.1); color: var(--blue); border: 1px solid rgba(96,165,250,0.25); }
     .sev-good { background: rgba(74,222,128,0.1); color: var(--green); border: 1px solid rgba(74,222,128,0.25); }
+    .sev-fixed { background: rgba(192,132,252,0.1); color: var(--purple); border: 1px solid rgba(192,132,252,0.25); }
     .finding h3 { font-size: 13px; font-weight: 600; color: var(--text); line-height: 1.4; }
     .finding p { font-size: 12px; color: var(--muted); line-height: 1.6; margin-bottom: 10px; }
     .finding code {
@@ -189,14 +190,14 @@
 <header>
   <h1>Stacked — Code Review Graph</h1>
   <span>Next.js 16 · React 19 · Supabase · TanStack Query</span>
-  <span style="margin-left:auto">April 2026</span>
+  <span>April 2026 · Rev 2</span>
 </header>
 
 <div class="stats-bar">
   <div class="stat">
     <div class="stat-dot" style="background:var(--blue)"></div>
     <span class="stat-label">Modules</span>
-    <span class="stat-value">9</span>
+    <span class="stat-value">10</span>
   </div>
   <div class="stat">
     <div class="stat-dot" style="background:var(--purple)"></div>
@@ -206,7 +207,7 @@
   <div class="stat">
     <div class="stat-dot" style="background:var(--green)"></div>
     <span class="stat-label">Components</span>
-    <span class="stat-value">32</span>
+    <span class="stat-value">34</span>
   </div>
   <div class="stat">
     <div class="stat-dot" style="background:var(--yellow)"></div>
@@ -226,7 +227,12 @@
   <div class="stat">
     <div class="stat-dot" style="background:var(--green)"></div>
     <span class="stat-label">Good Patterns</span>
-    <span class="stat-value">8</span>
+    <span class="stat-value">12</span>
+  </div>
+  <div class="stat">
+    <div class="stat-dot" style="background:var(--purple)"></div>
+    <span class="stat-label">Fixed Since Rev 1</span>
+    <span class="stat-value">4</span>
   </div>
 </div>
 
@@ -247,18 +253,18 @@
     <p class="section-title">System Architecture</p>
     <div class="graph-card">
       <h2>Full Stack Overview</h2>
-      <p>Next.js App Router with route groups, Supabase backend, React Query for server state, Zod for validation at every boundary.</p>
+      <p>Next.js App Router with route groups, Supabase backend, React Query for server state, Zod for validation at every boundary. Rev 2 adds link health monitoring, PDPA-compliant legal modals, and password auth.</p>
       <div class="mermaid">
 graph TB
     subgraph CLIENT["Client Layer"]
-        UI["UI Components<br/>shadcn/ui + framer-motion"]
+        UI["UI Components<br/>shadcn/ui · Nothing design system"]
         CTX["Contexts<br/>UserContext · DashboardContext · QueryClient"]
-        HOOKS["Hooks<br/>useBookmarks · useCategories · useSearch<br/>useSharedLinks · useAuth · useBookmarkCounts"]
+        HOOKS["Hooks<br/>useBookmarks · useCategories · useSharedLinks<br/>useBookmarkCounts · useAuth"]
     end
 
     subgraph APP_ROUTER["Next.js App Router"]
         AUTH_GROUP["(auth) group<br/>login · signup · verify · onboarding"]
-        DASH_GROUP["(dashboard) group<br/>dashboard · settings · search"]
+        DASH_GROUP["(dashboard) group<br/>dashboard · settings"]
         PUBLIC["app/p/[slug]<br/>public shared link pages"]
         API["API Routes<br/>18 endpoints"]
     end
@@ -268,15 +274,15 @@ graph TB
         ERRORS["errors.ts<br/>AppError hierarchy"]
         TIER["tier.ts<br/>limit checks"]
         API_RESP["api-response.ts<br/>standard responses"]
-        EXPORT["export/ · import/<br/>CSV · HTML · JSON"]
-        STORAGE["storage/<br/>Supabase Storage"]
+        EXPORT["export/<br/>CSV · HTML · JSON"]
+        LEGAL["shared/legal-modal.tsx<br/>ToS + Privacy (PDPA 2010)"]
     end
 
     subgraph SUPABASE["Supabase"]
-        DB["PostgreSQL<br/>bookmarks · categories · profiles<br/>shared_links · domains"]
-        AUTH_SB["Auth<br/>email · OAuth"]
+        DB["PostgreSQL<br/>bookmarks · categories · profiles<br/>shared_links · domains<br/>+ last_checked_at · marketing_consent"]
+        AUTH_SB["Auth<br/>email+password · OAuth"]
         STORAGE_SB["Storage<br/>avatars · domain assets"]
-        EDGE["Edge Functions<br/>fetch-metadata · maybe_orphan_domain"]
+        EDGE["Edge Functions<br/>fetch-metadata · check-links · maybe_orphan_domain"]
     end
 
     UI --> CTX
@@ -347,6 +353,47 @@ graph TD
         </div>
       </div>
     </div>
+
+    <div class="graph-card">
+      <h2>Link Health Monitor (M10)</h2>
+      <p>Daily Supabase Edge Function checks stale bookmarks (last_checked_at IS NULL or &gt; 7 days old). Batches of 50 with 1s delay. Badge shown on each bookmark card.</p>
+      <div class="mermaid">
+flowchart LR
+    CRON["pg_cron<br/>0 3 * * * UTC"]
+    EF["check-links<br/>Edge Function"]
+    DB_FETCH["SELECT stale bookmarks<br/>last_checked_at IS NULL<br/>OR &lt; 7 days ago"]
+    BATCH["Batch 50<br/>1s delay between batches"]
+    HEAD["HEAD request<br/>10s timeout per URL"]
+    STATUS{"HTTP status"}
+    ALIVE["link_status = alive<br/>200-299"]
+    REDIR["link_status = redirected<br/>301/302/308/3xx"]
+    DEAD["link_status = dead<br/>404/5xx"]
+    TIMEOUT["link_status = timeout<br/>AbortError"]
+    UPDATE["UPDATE bookmarks<br/>link_status + last_checked_at"]
+    BADGE["LinkStatusBadge<br/>dot + hover tooltip"]
+
+    CRON --> EF
+    EF --> DB_FETCH
+    DB_FETCH --> BATCH
+    BATCH --> HEAD
+    HEAD --> STATUS
+    STATUS --> ALIVE
+    STATUS --> REDIR
+    STATUS --> DEAD
+    STATUS --> TIMEOUT
+    ALIVE --> UPDATE
+    REDIR --> UPDATE
+    DEAD --> UPDATE
+    TIMEOUT --> UPDATE
+    UPDATE --> BADGE
+
+    style CRON fill:#1a1a2e,stroke:#3a3a5e
+    style EF fill:#1a2e1a,stroke:#3a5e3a
+    style ALIVE fill:#1a3a1a,stroke:#3a7a3a
+    style DEAD fill:#3a1a1a,stroke:#7a3a3a
+    style TIMEOUT fill:#2e2a1a,stroke:#5e5a3a
+      </div>
+    </div>
   </div>
 
   <!-- DATA FLOW -->
@@ -377,7 +424,7 @@ sequenceDiagram
     DB-->>API: existing bookmark?
     API->>EF: invoke fetch-metadata(url)
     EF-->>API: title, description, favicon, og_image
-    API->>DB: INSERT bookmark
+    API->>DB: INSERT bookmark (link_status=unchecked)
     DB-->>API: created bookmark
     API-->>H: { data: bookmark, duplicate_warning? }
     H->>H: invalidate ['bookmarks'] + ['bookmark-counts']
@@ -387,22 +434,29 @@ sequenceDiagram
 
     <div class="graph-card">
       <h2>Search & Filter Flow</h2>
-      <p>Filters sync to URL params. React Query re-fetches on filter change. Full-text search uses PostgreSQL search_vec column.</p>
+      <p>Filters sync to URL params. React Query re-fetches on filter change. Full-text search routes to /api/search using PostgreSQL search_vec column. Fixed: search was previously routing to nonexistent /search page.</p>
       <div class="mermaid">
 sequenceDiagram
     participant U as User
+    participant TB as TopBar SearchBar
     participant D as DashboardPage
     participant H as useBookmarks
-    participant API as GET /api/bookmarks
+    participant API as GET /api/bookmarks or /api/search
     participant DB as Supabase DB
 
-    U->>D: apply filter (category/tag/status/search)
-    D->>D: sync filters → URL params
-    D->>H: setFilters(newFilters)
-    H->>H: React Query refetch (30s stale)
-    H->>API: GET /api/bookmarks?...filters
-    API->>DB: query with RLS + filters
-    note over DB: pinned=true always first<br/>is_trashed excluded by default<br/>is_archived excluded by default
+    U->>TB: type search query
+    TB->>D: updateSearchParam('q', query)
+    D->>D: URL param ?q=... updated
+    D->>H: setFilters({ query })
+    H->>H: React Query refetch
+    alt query present
+      H->>API: GET /api/search?query=...
+      API->>DB: textSearch('search_vec', query)
+    else no query
+      H->>API: GET /api/bookmarks?...filters
+      API->>DB: standard filter query
+    end
+    note over DB: pinned=true always first<br/>is_trashed excluded by default
     DB-->>API: rows + count
     API-->>H: BookmarkListResponse
     H-->>D: bookmarks + pagination
@@ -542,7 +596,7 @@ graph TD
 
     subgraph LAYOUT_COMPS["Layout"]
         SIDEBAR["Sidebar<br/>system views · categories · tags<br/>resize (220-340px) → localStorage"]
-        TOPBAR["TopBar<br/>search · user menu · theme"]
+        TOPBAR["TopBar<br/>search · sort · view toggle · user menu"]
         MOBNAV["MobileNav<br/>drawer overlay"]
     end
 
@@ -556,7 +610,7 @@ graph TD
         OG_IMG["OG image hero<br/>fallback to favicon"]
         ACTIONS["PinBtn · FavBtn · MoreMenu"]
         TAGS["Tag pills (max 4 + N)"]
-        STATUS["Link status dot"]
+        STATUS["LinkStatusBadge<br/>dot + tooltip (alive/dead/redirected/timeout)"]
         CHECKBOX["Selection checkbox"]
     end
 
@@ -566,6 +620,37 @@ graph TD
     DASH_PAGE --> VIEWS
     GRID --> CARD
     STACK --> CARD
+      </div>
+    </div>
+
+    <div class="graph-card">
+      <h2>Auth Component Tree</h2>
+      <p>Password auth replaces magic link. Legal modal opens inline — no /terms or /privacy routes. Marketing consent stored per PDPA 2010.</p>
+      <div class="mermaid">
+graph TD
+    AUTH_LAYOUT["(auth)/layout.tsx<br/>dot-grid bg · wordmark · footer"]
+
+    subgraph SIGNUP["signup/page.tsx"]
+        SF_OAUTH["OAuth buttons<br/>Google · GitHub"]
+        SF_FORM["email + password + confirmPassword"]
+        SF_AGREED["agreed checkbox → LegalModal trigger"]
+        SF_MKTG["marketingConsent checkbox (optional)<br/>stored to profiles.marketing_consent"]
+    end
+
+    subgraph LEGAL["shared/legal-modal.tsx"]
+        TOS["Terms of Service<br/>12 sections · Malaysian law"]
+        PP["Privacy Policy<br/>PDPA 2010 compliant · Halfx Industries"]
+    end
+
+    subgraph ONBOARD["onboarding/page.tsx"]
+        OB_USER["Step 1: username"]
+        OB_CATS["Step 2: starter categories<br/>no emoji"]
+        OB_BM["Step 3: first bookmark"]
+    end
+
+    AUTH_LAYOUT --> SIGNUP
+    AUTH_LAYOUT --> ONBOARD
+    SF_AGREED -->|"button click"| LEGAL
       </div>
     </div>
 
@@ -594,9 +679,8 @@ graph TD
         <p>Each hook owns one API domain. React Query cache keys match resource names.</p>
         <div class="mermaid">
 graph LR
-    H_BM["useBookmarks"] -->|"['bookmarks']"| API_BM["/api/bookmarks"]
+    H_BM["useBookmarks"] -->|"['bookmarks']"| API_BM["/api/bookmarks<br/>or /api/search"]
     H_CAT["useCategories"] -->|"['categories']"| API_CAT["/api/categories"]
-    H_SRCH["useSearch"] -->|"['search']"| API_SRCH["/api/search"]
     H_SL["useSharedLinks"] -->|"['shared-links']"| API_SL["/api/shared-links"]
     H_CNT["useBookmarkCounts"] -->|"['bookmark-counts']"| API_CNT["/api/bookmarks/counts"]
     H_PROF["useProfile"] -->|"['profile']"| API_PROF["/api/profile"]
@@ -631,39 +715,68 @@ graph TD
   <div id="auth" class="tab-content">
     <p class="section-title">Authentication & Authorization</p>
     <div class="graph-card">
-      <h2>Sign Up / Onboarding Flow</h2>
+      <h2>Sign Up / Onboarding Flow (Rev 2 — Password Auth)</h2>
+      <p>Magic link replaced with email+password. Email confirmation non-blocking. Marketing consent stored during signup. Onboarding redesigned with Nothing design system.</p>
       <div class="mermaid">
 sequenceDiagram
     participant U as User
     participant SU as signup/page.tsx
+    participant LM as LegalModal
     participant AUTH as Supabase Auth
-    participant VE as verify-email/page.tsx
-    participant CB as auth/callback/route.ts
+    participant PROF as profiles table
     participant ON as onboarding/page.tsx
-    participant DB as profiles table
+    participant DB as DB
 
-    U->>SU: email + password
-    SU->>AUTH: signUp()
-    AUTH-->>U: confirmation email
-    U->>VE: click email link
-    VE->>CB: OAuth code exchange
-    CB->>AUTH: exchangeCodeForSession()
-    CB-->>ON: redirect (profile not complete)
-    ON->>DB: check onboarding_step
-    note over ON,DB: steps: username → categories → first_bookmark → done
-    ON->>DB: upsert profile on each step
-    DB-->>ON: step complete
-    ON-->>U: redirect to /dashboard
+    U->>SU: view Terms / Privacy Policy
+    SU->>LM: open modal (inline, no navigation)
+    LM-->>U: scrollable legal content
+    U->>SU: email + password + agreed ✓ + marketingConsent?
+    SU->>AUTH: signUp({ email, password })
+    AUTH-->>SU: { user, session? }
+    SU->>PROF: UPDATE marketing_consent = true/false
+    alt session exists (email confirm disabled)
+      SU-->>ON: redirect /onboarding
+    else no session
+      SU-->>U: redirect /verify-email (soft gate)
+    end
+    ON->>DB: step 1 — upsert username
+    ON->>DB: step 2 — insert starter categories
+    ON->>DB: step 3 — insert first bookmark
+    ON->>DB: UPDATE onboarding_step = done
+    ON-->>U: redirect /dashboard
+      </div>
+    </div>
+
+    <div class="graph-card">
+      <h2>Sign In Flow (Rev 2 — Fixed Race Condition)</h2>
+      <p>signInWithPassword replaces magic link. Navigation deferred to useEffect watching isAuthenticated — prevents AuthGuard redirect loop that caused "slow sign-in" symptoms.</p>
+      <div class="mermaid">
+sequenceDiagram
+    participant U as User
+    participant LG as login/page.tsx
+    participant AUTH as Supabase Auth
+    participant UC as UserContext
+    participant AG as AuthGuard
+
+    U->>LG: email + password
+    LG->>AUTH: signInWithPassword()
+    AUTH-->>LG: { session, user }
+    AUTH->>UC: onAuthStateChange(SIGNED_IN)
+    UC->>UC: fetch profile → isAuthenticated = true
+    LG->>LG: useEffect watches isAuthenticated
+    LG-->>AG: router.replace('/dashboard')
+    AG->>AG: isAuthenticated ✓ isOnboarded ✓
+    AG-->>U: render dashboard
       </div>
     </div>
 
     <div class="graph-card">
       <h2>UserContext Auth State Machine</h2>
-      <p>Two-phase init: quick getSession() then onAuthStateChange(). Web Locks API prevents race conditions.</p>
+      <p>Two-phase init: quick getSession() then onAuthStateChange(). Stale token (InvalidRefreshToken) silently calls signOut() before resetting state.</p>
       <div class="mermaid">
 stateDiagram-v2
     [*] --> Loading: mount
-    Loading --> Unauthenticated: getSession() null
+    Loading --> Unauthenticated: getSession() null or error → signOut()
     Loading --> Authenticated: getSession() ok → fetch profile
     Unauthenticated --> Authenticated: SIGNED_IN event
     Authenticated --> Unauthenticated: SIGNED_OUT event
@@ -706,10 +819,66 @@ flowchart TD
 
   <!-- REVIEW FINDINGS -->
   <div id="findings" class="tab-content">
-    <p class="section-title">Code Review Findings</p>
+    <p class="section-title">Code Review Findings — Rev 2</p>
 
     <div class="findings-grid">
 
+      <!-- FIXED -->
+      <div class="finding">
+        <div class="finding-header">
+          <span class="severity sev-fixed">Fixed</span>
+          <h3>Sign-in race condition — navigation before auth state</h3>
+        </div>
+        <p>router.replace('/dashboard') fired inline after signInWithPassword(), before onAuthStateChange(SIGNED_IN) updated UserContext. AuthGuard saw isAuthenticated=false and redirected back to /login, causing perceived slowness.</p>
+        <code>// login/page.tsx — FIXED
+// Navigation moved to useEffect watching isAuthenticated
+useEffect(() => {
+  if (isAuthenticated) router.replace('/dashboard')
+}, [isAuthenticated])</code>
+        <p class="location">src/app/(auth)/login/page.tsx</p>
+      </div>
+
+      <div class="finding">
+        <div class="finding-header">
+          <span class="severity sev-fixed">Fixed</span>
+          <h3>Search routing to nonexistent /search page</h3>
+        </div>
+        <p>handleSearchChange pushed to router.push('/search?q=...') — route doesn't exist. SearchBar value was hardcoded "". useBookmarks never called /api/search. All three fixed.</p>
+        <code>// top-bar.tsx — FIXED
+updateSearchParam('q', q || null)
+// SearchBar value={searchParams.get('q') ?? ''}
+// useBookmarks routes to /api/search when query present</code>
+        <p class="location">src/components/layout/top-bar.tsx · src/hooks/use-bookmarks.ts</p>
+      </div>
+
+      <div class="finding">
+        <div class="finding-header">
+          <span class="severity sev-fixed">Fixed</span>
+          <h3>Onboarding bookmark insert — domain null constraint</h3>
+        </div>
+        <p>First bookmark insert during onboarding was missing domain field, violating NOT NULL constraint. Also missing tags: [].</p>
+        <code>// onboarding/page.tsx — FIXED
+domain: hostname.replace(/^www\./, ''),
+tags: [],</code>
+        <p class="location">src/app/(auth)/onboarding/page.tsx</p>
+      </div>
+
+      <div class="finding">
+        <div class="finding-header">
+          <span class="severity sev-fixed">Fixed</span>
+          <h3>Base UI SelectValue renders UUID instead of label</h3>
+        </div>
+        <p>Base UI's Select.Value resolves labels from items store — populated only after dropdown first opens. Before that, falls back to String(value) = UUID. Fixed by passing computed children directly.</p>
+        <code>// bookmark-form.tsx — FIXED
+&lt;SelectValue&gt;
+  {selectedCat
+    ? &lt;span&gt;{selectedCat.name}&lt;/span&gt;
+    : &lt;span&gt;Select a category&lt;/span&gt;}
+&lt;/SelectValue&gt;</code>
+        <p class="location">src/components/bookmarks/bookmark-form.tsx</p>
+      </div>
+
+      <!-- CRITICAL -->
       <div class="finding">
         <div class="finding-header">
           <span class="severity sev-critical">Critical</span>
@@ -726,20 +895,22 @@ const { data } = await supabase
       <div class="finding">
         <div class="finding-header">
           <span class="severity sev-critical">Critical</span>
-          <h3>Search endpoint — no RLS ownership filter</h3>
+          <h3>Search endpoint — explicit user_id filter recommended</h3>
         </div>
-        <p>Full-text search on search_vec must explicitly filter by user_id, or rely solely on RLS. Verify RLS policy covers textSearch path — supabase's <code>textSearch()</code> can bypass policies if misconfigured.</p>
-        <code>// api/search/route.ts — confirm RLS active
-// or add explicit: .eq('user_id', user.id)</code>
+        <p>Full-text search on search_vec relies solely on RLS. Add explicit .eq('user_id', user.id) as defence-in-depth — prevents data leaks if RLS policy is misconfigured on the textSearch path.</p>
+        <code>// api/search/route.ts — add defence-in-depth:
+.eq('user_id', user.id)
+.textSearch('search_vec', query)</code>
         <p class="location">src/app/api/search/route.ts</p>
       </div>
 
+      <!-- WARNINGS -->
       <div class="finding">
         <div class="finding-header">
           <span class="severity sev-warn">Warning</span>
           <h3>Bulk action — 200 ID limit not server-validated</h3>
         </div>
-        <p>Client sends up to 200 IDs. Zod schema should validate <code>ids.max(200)</code>. Without it, attacker can send 10K IDs in one request.</p>
+        <p>Client sends up to 200 IDs. Zod schema should validate ids.max(200). Without it, attacker can send 10K IDs in one request.</p>
         <code>// validators.ts — add:
 ids: z.array(z.string().uuid()).min(1).max(200)</code>
         <p class="location">src/app/api/bookmarks/bulk/route.ts</p>
@@ -783,9 +954,9 @@ ids: z.array(z.string().uuid()).min(1).max(200)</code>
       <div class="finding">
         <div class="finding-header">
           <span class="severity sev-warn">Warning</span>
-          <h3>useBookmarks — filter state reset on remount</h3>
+          <h3>useBookmarks — filter state resets on remount</h3>
         </div>
-        <p>Filter state lives in hook memory. On component remount (route change → back), filters reset to DEFAULT_FILTERS even though URL params may have the state. URL params should be source of truth.</p>
+        <p>Filter state lives in hook memory. On component remount (route change → back), filters reset to DEFAULT_FILTERS even though URL params may have the state. URL params should be sole source of truth.</p>
         <code>// use-bookmarks.ts
 const [filters, setFilters] = useState(DEFAULT_FILTERS)
 // Should initialise from URL params</code>
@@ -797,7 +968,7 @@ const [filters, setFilters] = useState(DEFAULT_FILTERS)
           <span class="severity sev-warn">Warning</span>
           <h3>Hard delete — domain orphan cleanup is best-effort</h3>
         </div>
-        <p><code>maybe_orphan_domain</code> RPC called after delete. If it fails, orphan domains accumulate in storage. No retry or error surfacing.</p>
+        <p>maybe_orphan_domain RPC called after delete. If it fails, orphan domains accumulate in storage. No retry or error surfacing.</p>
         <code>// api/bookmarks/[id]/route.ts DELETE
 await supabase.rpc('maybe_orphan_domain', {...})
 // failure here = silent orphan leak</code>
@@ -805,6 +976,33 @@ await supabase.rpc('maybe_orphan_domain', {...})
       </div>
 
       <!-- GOOD PATTERNS -->
+      <div class="finding">
+        <div class="finding-header">
+          <span class="severity sev-good">Good</span>
+          <h3>Link Health Monitor — full stack implementation</h3>
+        </div>
+        <p>M10 complete: migration adds last_checked_at + index, edge function batches HEAD checks with timeout + status mapping, LinkStatusBadge shows dot + hover tooltip on every card. Scheduled daily at 3AM UTC.</p>
+        <p class="location">supabase/migrations/011 · supabase/functions/check-links · components/shared/link-status-badge.tsx</p>
+      </div>
+
+      <div class="finding">
+        <div class="finding-header">
+          <span class="severity sev-good">Good</span>
+          <h3>PDPA 2010-compliant Terms & Privacy Policy</h3>
+        </div>
+        <p>Full legal documents embedded in LegalModal component — no external routes needed. ToS covers 12 sections under Malaysian law. Privacy Policy covers data controller (Halfx Industries), collection purposes, PDPA rights, data retention, international transfers.</p>
+        <p class="location">src/components/shared/legal-modal.tsx</p>
+      </div>
+
+      <div class="finding">
+        <div class="finding-header">
+          <span class="severity sev-good">Good</span>
+          <h3>Marketing consent as separate PDPA opt-in</h3>
+        </div>
+        <p>Marketing consent checkbox is separate from T&C acceptance — correct PDPA practice. Stored as profiles.marketing_consent boolean. Migration 012 adds column with DEFAULT FALSE. Opt-out available without account closure.</p>
+        <p class="location">supabase/migrations/012 · src/app/(auth)/signup/page.tsx</p>
+      </div>
+
       <div class="finding">
         <div class="finding-header">
           <span class="severity sev-good">Good</span>
@@ -864,7 +1062,7 @@ await supabase.rpc('maybe_orphan_domain', {...})
           <span class="severity sev-good">Good</span>
           <h3>Web Locks API in UserContext</h3>
         </div>
-        <p>Uses navigator.locks.request to prevent concurrent profile fetches during rapid auth state changes. Prevents race conditions with a 'cancelled' flag pattern.</p>
+        <p>Uses navigator.locks.request to prevent concurrent profile fetches during rapid auth state changes. Prevents race conditions with a 'cancelled' flag pattern. Also handles stale token by calling signOut() silently.</p>
         <p class="location">src/contexts/user-context.tsx</p>
       </div>
 
@@ -889,10 +1087,10 @@ await supabase.rpc('maybe_orphan_domain', {...})
       <div class="finding">
         <div class="finding-header">
           <span class="severity sev-info">Info</span>
-          <h3>search_vec column — no migration visible</h3>
+          <h3>Legal contact emails are placeholders</h3>
         </div>
-        <p>Search uses PostgreSQL textSearch on search_vec. This column requires a generated tsvector column + GIN index in migrations. Verify it's created in DB schema — not visible in migrations 006-008.</p>
-        <p class="location">supabase/migrations/ · src/app/api/search/route.ts</p>
+        <p>Terms and Privacy Policy reference support@halfxindustries.com and privacy@halfxindustries.com. These need real mailboxes before public launch. Also consider adding a physical address for full PDPA 2010 compliance.</p>
+        <p class="location">src/components/shared/legal-modal.tsx</p>
       </div>
 
     </div>
@@ -900,7 +1098,7 @@ await supabase.rpc('maybe_orphan_domain', {...})
 
   <!-- MODULE INDEX -->
   <div id="modules" class="tab-content">
-    <p class="section-title">Module Index</p>
+    <p class="section-title">Module Index — Rev 2</p>
     <div class="graph-card" style="padding:0; overflow:hidden;">
       <table>
         <thead>
@@ -944,7 +1142,7 @@ await supabase.rpc('maybe_orphan_domain', {...})
           </tr>
           <tr>
             <td>contexts/user-context.tsx</td>
-            <td style="color:#e8e8e8;font-size:12px">Auth + profile state</td>
+            <td style="color:#e8e8e8;font-size:12px">Auth + profile state. Handles stale token via silent signOut().</td>
             <td><span class="tag-pill">supabase/client</span><span class="tag-pill">types/profile</span></td>
             <td><span class="tag-pill">UserProvider</span><span class="tag-pill">useUser()</span></td>
           </tr>
@@ -956,8 +1154,8 @@ await supabase.rpc('maybe_orphan_domain', {...})
           </tr>
           <tr>
             <td>hooks/use-bookmarks.ts</td>
-            <td style="color:#e8e8e8;font-size:12px">Bookmark data + mutations</td>
-            <td><span class="tag-pill">tanstack/query</span><span class="tag-pill">/api/bookmarks</span></td>
+            <td style="color:#e8e8e8;font-size:12px">Bookmark data + mutations. Routes to /api/search when query present.</td>
+            <td><span class="tag-pill">tanstack/query</span><span class="tag-pill">/api/bookmarks</span><span class="tag-pill">/api/search</span></td>
             <td><span class="tag-pill">useBookmarks()</span><span class="tag-pill">createBookmark()</span><span class="tag-pill">bulkAction()</span></td>
           </tr>
           <tr>
@@ -983,6 +1181,24 @@ await supabase.rpc('maybe_orphan_domain', {...})
             <td style="color:#e8e8e8;font-size:12px">Route protection HOC</td>
             <td><span class="tag-pill">user-context</span><span class="tag-pill">next/navigation</span></td>
             <td><span class="tag-pill">AuthGuard</span></td>
+          </tr>
+          <tr>
+            <td>components/shared/link-status-badge.tsx</td>
+            <td style="color:#e8e8e8;font-size:12px">Link health dot + hover tooltip. Used in BookmarkCard and BookmarkListItem.</td>
+            <td><span class="tag-pill">lucide-react</span><span class="tag-pill">types/bookmark</span></td>
+            <td><span class="tag-pill">LinkStatusBadge</span></td>
+          </tr>
+          <tr>
+            <td>components/shared/legal-modal.tsx</td>
+            <td style="color:#e8e8e8;font-size:12px">Inline ToS + Privacy Policy modal. PDPA 2010 compliant. Halfx Industries. No external routes.</td>
+            <td><span class="tag-pill">lucide-react</span></td>
+            <td><span class="tag-pill">LegalModal</span></td>
+          </tr>
+          <tr>
+            <td>supabase/functions/check-links</td>
+            <td style="color:#e8e8e8;font-size:12px">M10 link health edge function. Batches HEAD checks, updates link_status + last_checked_at. Scheduled daily.</td>
+            <td><span class="tag-pill">supabase-js</span><span class="tag-pill">Deno</span></td>
+            <td><span class="tag-pill">Deno.serve()</span></td>
           </tr>
           <tr>
             <td>lib/export/to-csv.ts<br/>to-html.ts · to-json.ts</td>

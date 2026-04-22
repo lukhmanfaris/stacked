@@ -20,6 +20,9 @@ interface DashboardContextValue {
   /** Controls the global new-bookmark form modal */
   formOpen: boolean
   setFormOpen: (open: boolean) => void
+  /** Controls the Cmd+K command palette */
+  paletteOpen: boolean
+  setPaletteOpen: (open: boolean) => void
 }
 
 const VIEW_MODES: ViewMode[] = ['stack', 'grid', 'list']
@@ -31,6 +34,7 @@ export function DashboardProvider({ children }: { children: ReactNode }) {
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [viewMode, setViewModeState] = useState<ViewMode>('grid')
   const [formOpen, setFormOpen] = useState(false)
+  const [paletteOpen, setPaletteOpen] = useState(false)
 
   // Restore persisted view mode on mount
   useEffect(() => {
@@ -73,6 +77,8 @@ export function DashboardProvider({ children }: { children: ReactNode }) {
         cycleViewMode,
         formOpen,
         setFormOpen,
+        paletteOpen,
+        setPaletteOpen,
       }}
     >
       {children}

@@ -1,4 +1,4 @@
--- M10: Link Health Monitor
+-- Migration 011: Link Health Monitor (Feature M10)
 -- Adds last_checked_at so the edge function knows which bookmarks are stale.
 
 ALTER TABLE bookmarks

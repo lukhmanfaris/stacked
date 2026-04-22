@@ -26,6 +26,7 @@ export type Database = {
           is_archived: boolean
           is_favorite: boolean
           is_pinned: boolean
+          last_checked_at: string | null
           link_status: Database["public"]["Enums"]["link_status"]
           og_image_url: string | null
           search_vec: unknown
@@ -47,6 +48,7 @@ export type Database = {
           is_archived?: boolean
           is_favorite?: boolean
           is_pinned?: boolean
+          last_checked_at?: string | null
           link_status?: Database["public"]["Enums"]["link_status"]
           og_image_url?: string | null
           search_vec?: unknown
@@ -68,6 +70,7 @@ export type Database = {
           is_archived?: boolean
           is_favorite?: boolean
           is_pinned?: boolean
+          last_checked_at?: string | null
           link_status?: Database["public"]["Enums"]["link_status"]
           og_image_url?: string | null
           search_vec?: unknown

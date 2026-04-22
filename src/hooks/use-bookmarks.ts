@@ -40,7 +40,7 @@ async function fetchBookmarks(filters: BookmarkFilters): Promise<BookmarkListRes
   if (!res.ok) throw new Error(json.error?.message ?? 'Failed to fetch bookmarks')
   // /api/search returns { results, total, ... } — normalise to BookmarkListResponse shape
   if (filters.query?.trim()) {
-    return { bookmarks: json.data.results, total: json.data.total, has_next: json.data.has_next }
+    return { bookmarks: json.data.results, total: json.data.total, has_next: json.data.has_next, page: filters.page ?? 1, per_page: filters.per_page ?? 20 }
   }
   return json.data
 }

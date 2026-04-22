@@ -346,7 +346,7 @@ export default function OnboardingPage() {
     if (isLoading) return
     if (!user) { router.replace('/login'); return }
     if (profile?.onboarding_step === 'done') { router.replace('/dashboard'); return }
-    if (profile && profile.onboarding_step !== 'done') {
+    if (profile && (profile.onboarding_step as string) !== 'done') {
       const saved = profile.onboarding_step as Step
       if (STEPS.includes(saved)) setStep(saved)
     }
